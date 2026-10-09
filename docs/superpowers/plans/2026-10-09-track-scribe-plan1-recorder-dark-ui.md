@@ -298,7 +298,7 @@ void main() {
     expect(t.accept(900), isFalse);   // clock went backwards → drop
     expect(t.accept(1000), isFalse);  // duplicate → drop
     expect(t.accept(3_000_000_000), isTrue);
-    expect(t.secondsSince(1000), closeTo(3.0, 1e-9));
+    expect(t.secondsSince(1000), closeTo(2.999999, 1e-9));
   });
 }
 ```

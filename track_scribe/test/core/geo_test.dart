@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/core/geo.dart';
 
 void main() {
-  test('one metre of latitude is ~111.19 km per degree', () {
+  test('0.0001 degrees of latitude is ~11.12 m', () {
     expect(haversineMeters(36.7538, 3.1856, 36.7539, 3.1856), closeTo(11.12, 0.5));
   });
   test('a known Algiers corridor is within 0.3% of geodesic length', () {
