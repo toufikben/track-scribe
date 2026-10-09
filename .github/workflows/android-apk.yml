@@ -1,6 +1,6 @@
 name: android-apk
 on:
-  push: { branches: [main] }
+  push: { branches: [main, plan1-recorder-dark-ui] }
   workflow_dispatch:
 concurrency: { group: "apk-${{ github.ref }}", cancel-in-progress: true }
 jobs:
@@ -22,3 +22,5 @@ jobs:
         with:
           name: track-scribe-debug-apk
           path: track_scribe/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 5
