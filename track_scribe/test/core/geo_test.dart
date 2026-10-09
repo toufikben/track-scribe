@@ -15,4 +15,12 @@ void main() {
   test('bearing east is ~90°', () {
     expect(bearingDeg(36.75, 3.18, 36.75, 3.19), closeTo(90, 0.5));
   });
+  test('Earth radius is pinned to ~1e-5 relative', () {
+    // One degree of latitude on the IUGG mean sphere R=6371008.8 is exactly
+    // 2*R*asin(sin(0.5deg)) = R*pi/180 = 111195.080234 m. A tolerance of 1.0 m
+    // (~9e-6 relative) rejects the equatorial 6378137 (111319.49 m) and the
+    // polar 6356752 (110946.25 m) radii, so the constant cannot be swapped
+    // silently.
+    expect(haversineMeters(0, 0, 1, 0), closeTo(111195.08, 1.0));
+  });
 }
