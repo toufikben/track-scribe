@@ -72,4 +72,89 @@ void main() {
     expect(e.stats.droppedOutOfOrder, 1);
     expect(e.elapsedNanos, 5_000_000_000);
   });
+
+  test('R39 freeze: a rejected jump must not become the yardstick for later fixes', () {
+    // max(3, 2 x 4) = 8 m gate, v_max 2.5 m/s (ر3/ر5).
+    final walkCfg = SportConfig.forSport(Sport.walk);
+    final e = RecorderEngine(walkCfg, startNanos: 0);
+    e.onFix(walk(dLat: 0, sec: 0));       // first fix: anchor + stored
+    e.onFix(walk(dLat: 50000, sec: 1));   // ~50 km impossible jump → rejected
+    expect(e.storedPoints.last.type, WaypointType.rejected);
+    // Honest 1.4 m/s walking resumes. At sec 6 the walker is 8.4 m from the
+    // untouched anchor → the gate opens and distance must grow. da1c404's
+    // bug: the jump became the yardstick, so sec 2 was rejected too (a real
+    // fix that agrees with the anchor must never be rejected), later stores
+    // accumulated from the bogus reference, and sustained noise freezes
+    // accumulation entirely (controller: 100 % loss under alternating jitter).
+    for (int k = 2; k <= 6; k++) { e.onFix(walk(dLat: 1.4 * k, sec: k)); }
+    expect(e.stats.rejectedCount, 1);            // ONLY the jump was rejected
+    expect(e.distanceMeters, greaterThan(0.0));  // distance grows after the jump
+    final mid = e.distanceMeters;
+    for (int k = 7; k <= 12; k++) { e.onFix(walk(dLat: 1.4 * k, sec: k)); }
+    expect(e.distanceMeters, greaterThan(mid));  // accumulation keeps flowing
+    // Pinned against the untouched anchor: two gate stores, 8.4 m each.
+    // The buggy build yields 8.406 (one store measured from sec 2 dLat 1.4).
+    expect(e.distanceMeters, closeTo(16.813, 0.05));
+    expect(e.distanceMeters, lessThan(30.0));    // the 50 km jump is never billed
+    expect(
+      e.storedPoints.where((p) =>
+              p.type == WaypointType.rejected &&
+              p.distanceTo(e.storedPoints.first) > 10000)
+          .length,
+      greaterThanOrEqualTo(1)); // the jump raw point is kept, never deleted (ر9)
+  });
+
+  test('R40 re-acquisition: honest walking accrues again after a 500 m transport, gap never billed', () {
+    final walkCfg = SportConfig.forSport(Sport.walk);
+    final e = RecorderEngine(walkCfg, startNanos: 0);
+    // Walk ~30 s at 1.4 m/s (1 dLat unit ≈ 1.000757 m).
+    for (int t = 0; t <= 30; t++) { e.onFix(walk(dLat: 1.4 * t, sec: t)); }
+    final preTransport = e.distanceMeters; // ~42 m walked, stored every 8 m gate
+    expect(preTransport, closeTo(42.03, 0.2));
+    // Teleport 500 m (car), then walk ~30 s more at the same honest speed.
+    e.onFix(walk(dLat: 42 + 500, sec: 31));
+    for (int k = 1; k <= 30; k++) { e.onFix(walk(dLat: 542 + 1.4 * k, sec: 31 + k)); }
+    final total = e.distanceMeters;
+    // R39 alone (anchor holds forever) would plateau at ~42 m; anchoring on
+    // the jump point (da1c404) is the freeze bug. Post-transport walking
+    // (≈ 4.2 m chain + four 8.4 m gate stores ≈ 37.8 m) must accrue.
+    expect(total, greaterThan(preTransport + 20));
+    expect(total, lessThan(100.0)); // 84 m of real walking — the 500 m gap never enters
+    // The teleport itself is kept and flagged rejected (ر4/ر9), ~500 m from
+    // the last honest store before it.
+    final tp = e.storedPoints.firstWhere((p) => p.timeNanos == 31000000000);
+    expect(tp.type, WaypointType.rejected);
+    expect(tp.distanceTo(e.storedPoints[e.storedPoints.indexOf(tp) - 1]),
+        closeTo(500.38, 1.0));
+  });
+
+  test('R41 sink: one synchronous verdict per accepted fix; dropped fixes never reach it', () {
+    final seen = <(int, WaypointType)>[];
+    final e = RecorderEngine(cfg, startNanos: 0,
+        rawSink: (fix, verdict) => seen.add((fix.timeNanos ~/ 1000000000, verdict)));
+    e.onFix(walk(dLat: 0, sec: 0));            // first fix stored → normal
+    e.onFix(walk(dLat: 3, sec: 1));            // 3.002 m < gate 8 → skipped
+    e.onFix(walk(dLat: 300000, sec: 2));       // 300 km jump → rejected
+    expect(seen, [
+      (0, WaypointType.normal),
+      (1, WaypointType.skipped),
+      (2, WaypointType.rejected),
+    ]);
+    e.onFix(walk(dLat: 100000, sec: 1));       // non-monotonic → dropped by ر1
+    expect(e.stats.droppedOutOfOrder, 1);
+    expect(seen.length, 3);                    // never reached the sink
+    expect(seen.length, e.stats.fixCount);     // exactly one call per accepted fix
+
+    // Idle verdicts: standing still (implied speed ~0 < 0.4 m/s) for > 12 s.
+    final idleSeen = <WaypointType>[];
+    final still = RecorderEngine(cfg, startNanos: 0,
+        rawSink: (fix, verdict) => idleSeen.add(verdict));
+    for (int t = 0; t <= 14; t++) { still.onFix(walk(dLat: 0.1, sec: t)); }
+    expect(idleSeen.first, WaypointType.normal);          // first fix stored
+    expect(idleSeen.sublist(1, 13),
+        List.filled(12, WaypointType.skipped));           // still, not idle yet
+    expect(idleSeen[13], WaypointType.idle);              // ر6 marker at t=13
+    expect(idleSeen[14], WaypointType.idle);              // stays idle, time flows
+    expect(still.distanceMeters, 0.0);
+  });
 }

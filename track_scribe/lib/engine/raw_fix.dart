@@ -1,7 +1,11 @@
 import 'package:track_scribe/core/geo.dart';
 
 /// Waypoint classification per spec rules ر4/ر6 (waypoint_type in §4).
-enum WaypointType { normal, idle, rejected }
+/// `skipped` is NOT a persisted waypoint_type (spec §4 lists NORMAL, IDLE,
+/// REJECTED, SEGPOINT): it is the sink verdict (ر9/R41) for an accepted fix
+/// the store gate did not keep, so the persistence layer still sees every
+/// raw point.
+enum WaypointType { normal, idle, rejected, skipped }
 
 /// One GPS fix as delivered by the platform, in monotonic time.
 class RawFix {

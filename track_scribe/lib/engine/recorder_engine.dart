@@ -3,6 +3,13 @@ import 'package:track_scribe/core/monotonic.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/engine/sport_config.dart';
 
+/// Sink for EVERY accepted raw fix (ر9/R41): invoked synchronously, once per
+/// fix, before `RecorderEngine.onFix` returns. The verdict is the engine's
+/// classification of that fix (normal store / idle marker / rejected jump /
+/// gate-skipped); the engine itself keeps no raw list — a later task pipes
+/// this into the persistence layer.
+typedef RawFixSink = void Function(RawFix fix, WaypointType verdict);
+
 /// Counters exposed to the UI/persistence layers (ر10 mock detection feeds the
 /// activity-level flag; ر4/ر1 diagnostics).
 class EngineStats {
@@ -14,25 +21,46 @@ class EngineStats {
 }
 
 /// Pure-Dart recorder core. Consumes RawFixes, decides which points are
-/// stored, accumulates distance from the LAST STORED point (ر2), rejects
-/// impossible jumps without deleting them (ر4/ر9), and marks standing-still
-/// as IDLE while time keeps flowing (ر6). Imports no Flutter, dart:io, or
-/// plugin — testable on the desktop with `flutter test` alone.
+/// stored, accumulates distance from the anchor — the last point that PASSED
+/// the jump test (ر2/R39) — rejects impossible jumps without deleting them
+/// (ر4/ر9), re-acquires the anchor after genuine transport (R40), and marks
+/// standing-still as IDLE while time keeps flowing (ر6). Imports no Flutter,
+/// dart:io, or plugin — testable on the desktop with `flutter test` alone.
 class RecorderEngine {
   /// Deliberately does NOT pre-accept [startNanos] into the ticker: a first
   /// fix stamped exactly `startNanos` is legitimate (elapsed 0), and the
   /// ticker's strict `>` gate would silently drop it. The ticker remains the
   /// single source of truth for ordering (ر1) and for every duration below.
-  RecorderEngine(this.config, {required int startNanos})
+  RecorderEngine(this.config,
+      {required int startNanos, this.rawSink})
       : _sessionStartNanos = startNanos,
         _ticker = MonotonicTicker();
 
+  /// R40: rejected fixes must be mutually consistent across this many
+  /// consecutive pairs (each d/dt <= v_max) before the anchor may move.
+  /// GPS noise cannot fabricate three such pairs, so the transport rescue
+  /// never bills the teleport gap itself.
+  static const int _reanchorAfterPairs = 3;
+
   final SportConfig config;
+  final RawFixSink? rawSink;
   final MonotonicTicker _ticker;
   final int _sessionStartNanos;
   final List<StoredPoint> _points = [];
 
-  StoredPoint? _lastStored;
+  /// R39: the yardstick for distance accumulation and for the next
+  /// gate/jump/heartbeat comparison (ر2). It moves only with points that
+  /// PASSED the jump test — a rejected point never moves it, otherwise the
+  /// first noise spike becomes the reference and freezes accumulation.
+  StoredPoint? _anchor;
+
+  /// R40 re-acquisition state: while fixes disagree with the anchor, track
+  /// the chain of consecutive fixes that are mutually consistent, its length
+  /// in completed pairs and its internal movement.
+  StoredPoint? _chainPrev;
+  int _consistentPairs = 0;
+  double _chainDistanceM = 0;
+
   int? _idleSinceNanos;
   bool _idle = false;
   bool _hasAcceptedFix = false;
@@ -57,7 +85,8 @@ class RecorderEngine {
 
   void onFix(RawFix fix) {
     // ر1 — the ticker is the enforcement point for monotonicity; equal or
-    // earlier timestamps are dropped, never averaged.
+    // earlier timestamps are dropped, never averaged. A dropped fix was
+    // never accepted, so it must not reach the sink (R41).
     if (!_ticker.accept(fix.timeNanos)) {
       _dropped++;
       return;
@@ -65,41 +94,53 @@ class RecorderEngine {
     _hasAcceptedFix = true;
     _fixCount++;
     if (fix.isMocked) _mocks++;                       // ر10
+    final verdict = _process(fix);
+    rawSink?.call(fix, verdict); // R41 — synchronous, before onFix returns
+  }
 
-    final last = _lastStored;
-    if (last == null) { _store(fix, WaypointType.normal, addDistance: false); return; }
+  WaypointType _process(RawFix fix) {
+    final anchor = _anchor;
+    if (anchor == null) {
+      _store(fix, WaypointType.normal, addDistance: false);
+      return WaypointType.normal;
+    }
 
-    final dt = _ticker.secondsSince(last.timeNanos);
-    final d = haversineMeters(last.lat, last.lon, fix.lat, fix.lon);
+    final dt = _ticker.secondsSince(anchor.timeNanos);
+    final d = haversineMeters(anchor.lat, anchor.lon, fix.lat, fix.lon);
     final impliedSpeed = dt > 0 ? d / dt : null;
     final speed = fix.speedMps ?? impliedSpeed;        // Doppler wins over differencing
 
     // ر4 — impossible jump: keep the raw point, add nothing to distance.
     // Spec ر4/ر5 threshold is v_max itself; the brief's draft used 2× v_max,
     // a silent relaxation the spec does not authorise — spec wins.
+    // R39: _store() below keeps _anchor where it is; R40 then watches for a
+    // locally consistent chain among the rejected fixes.
     if (d > config.maxJumpM ||
         (impliedSpeed != null && impliedSpeed > config.maxSpeedMps)) {
       _rejected++;
-      _store(fix, WaypointType.rejected, addDistance: false);
-      return;
+      _trackReacquisition(_store(fix, WaypointType.rejected, addDistance: false));
+      return WaypointType.rejected;
     }
+    _resetChain(); // a fix agreeing with the anchor invalidates the chain
 
     _updateIdle(fix, speed ?? 0.0);
 
     final heartbeatDue =
-        _ticker.secondsSince(last.timeNanos) >= config.forceStoreAfterS;
+        _ticker.secondsSince(anchor.timeNanos) >= config.forceStoreAfterS;
     if (_idle) {
       // ر6 — time flows, distance does not.
       if (heartbeatDue && !_lastWasIdleMarker) _store(fix, WaypointType.idle, addDistance: false);
-      return;
+      return WaypointType.idle;
     }
     if (d >= config.gateFor(fix.accuracyM) || heartbeatDue) {
-      _store(fix, WaypointType.normal, addDistance: true); // ر2 — from last STORED
+      _store(fix, WaypointType.normal, addDistance: true); // ر2 — from the anchor
+      return WaypointType.normal;
     }
+    return WaypointType.skipped;
   }
 
   bool get _lastWasIdleMarker =>
-      _lastStored != null && _lastStored!.type == WaypointType.idle;
+      _anchor != null && _anchor!.type == WaypointType.idle;
 
   void _updateIdle(RawFix fix, double speed) {
     if (speed < config.idleSpeedMps) {
@@ -114,16 +155,57 @@ class RecorderEngine {
     }
   }
 
-  void _store(RawFix fix, WaypointType type, {required bool addDistance}) {
-    final last = _lastStored;
-    if (addDistance && last != null) {
-      _distanceM += haversineMeters(last.lat, last.lon, fix.lat, fix.lon);
+  /// R40: genuine transport (walk → car → walk) keeps every post-transport
+  /// fix disagreeing with the stale anchor, so the anchor must be allowed to
+  /// move again — but only after 3 consecutive pairs among the rejected
+  /// fixes are mutually consistent at <= v_max, and only the chain's
+  /// INTERNAL movement is billed; the teleport gap is never added.
+  void _trackReacquisition(StoredPoint p) {
+    final prev = _chainPrev;
+    if (prev != null) {
+      final dt = _ticker.secondsSince(prev.timeNanos);
+      final d = haversineMeters(prev.lat, prev.lon, p.lat, p.lon);
+      if (dt > 0 && d / dt <= config.maxSpeedMps) {
+        _consistentPairs++;
+        _chainDistanceM += d;
+        if (_consistentPairs >= _reanchorAfterPairs) {
+          _anchor = p;
+          _distanceM += _chainDistanceM;
+          _resetChain();
+          return;
+        }
+        _chainPrev = p;
+        return;
+      }
+    }
+    // Chain start, or this fix is inconsistent with the previous one:
+    // the chain restarts here.
+    _chainPrev = p;
+    _consistentPairs = 0;
+    _chainDistanceM = 0;
+  }
+
+  void _resetChain() {
+    _chainPrev = null;
+    _consistentPairs = 0;
+    _chainDistanceM = 0;
+  }
+
+  /// Appends to the polyline (`storedPoints`: map, distance, resume
+  /// checkpoint) and moves the anchor only when the point passed the jump
+  /// test — rejected points are kept (ر9) but must never become the
+  /// yardstick (R39).
+  StoredPoint _store(RawFix fix, WaypointType type, {required bool addDistance}) {
+    final anchor = _anchor;
+    if (addDistance && anchor != null) {
+      _distanceM += haversineMeters(anchor.lat, anchor.lon, fix.lat, fix.lon);
     }
     final p = StoredPoint(
       lat: fix.lat, lon: fix.lon, timeNanos: fix.timeNanos, accuracyM: fix.accuracyM,
       type: type, altitudeM: fix.altitudeM, speedMps: fix.speedMps, bearingDeg: fix.bearingDeg,
     );
     _points.add(p);
-    _lastStored = p;
+    if (type != WaypointType.rejected) _anchor = p;
+    return p;
   }
 }
