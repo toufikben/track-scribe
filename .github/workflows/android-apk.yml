@@ -2,7 +2,7 @@ name: android-apk
 on:
   push: { branches: [main] }
   workflow_dispatch:
-concurrency: { group: apk-${{ github.ref }}, cancel-in-progress: true }
+concurrency: { group: "apk-${{ github.ref }}", cancel-in-progress: true }
 jobs:
   apk:
     runs-on: ubuntu-latest
