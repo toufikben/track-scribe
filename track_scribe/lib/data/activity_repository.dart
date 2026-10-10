@@ -50,6 +50,7 @@ class ActivityRepository {
             timeNanos: p.timeNanos,
             lat: p.lat,
             lon: p.lon,
+            altGnss: Value(p.altitudeM),
             accuracyM: p.accuracyM,
             speedMps: Value(p.speedMps),
             bearingDeg: Value(p.bearingDeg),

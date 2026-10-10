@@ -817,6 +817,17 @@ class $TrackPointsTable extends TrackPoints
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _altGnssMeta = const VerificationMeta(
+    'altGnss',
+  );
+  @override
+  late final GeneratedColumn<double> altGnss = GeneratedColumn<double>(
+    'alt_gnss',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _accuracyMMeta = const VerificationMeta(
     'accuracyM',
   );
@@ -868,6 +879,7 @@ class $TrackPointsTable extends TrackPoints
     timeNanos,
     lat,
     lon,
+    altGnss,
     accuracyM,
     speedMps,
     bearingDeg,
@@ -919,6 +931,12 @@ class $TrackPointsTable extends TrackPoints
       );
     } else if (isInserting) {
       context.missing(_lonMeta);
+    }
+    if (data.containsKey('alt_gnss')) {
+      context.handle(
+        _altGnssMeta,
+        altGnss.isAcceptableOrUnknown(data['alt_gnss']!, _altGnssMeta),
+      );
     }
     if (data.containsKey('accuracy_m')) {
       context.handle(
@@ -980,6 +998,10 @@ class $TrackPointsTable extends TrackPoints
         DriftSqlType.double,
         data['${effectivePrefix}lon'],
       )!,
+      altGnss: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}alt_gnss'],
+      ),
       accuracyM: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}accuracy_m'],
@@ -1011,6 +1033,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
   final int timeNanos;
   final double lat;
   final double lon;
+  final double? altGnss;
   final double accuracyM;
   final double? speedMps;
   final double? bearingDeg;
@@ -1021,6 +1044,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     required this.timeNanos,
     required this.lat,
     required this.lon,
+    this.altGnss,
     required this.accuracyM,
     this.speedMps,
     this.bearingDeg,
@@ -1034,6 +1058,9 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     map['time_nanos'] = Variable<int>(timeNanos);
     map['lat'] = Variable<double>(lat);
     map['lon'] = Variable<double>(lon);
+    if (!nullToAbsent || altGnss != null) {
+      map['alt_gnss'] = Variable<double>(altGnss);
+    }
     map['accuracy_m'] = Variable<double>(accuracyM);
     if (!nullToAbsent || speedMps != null) {
       map['speed_mps'] = Variable<double>(speedMps);
@@ -1052,6 +1079,9 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       timeNanos: Value(timeNanos),
       lat: Value(lat),
       lon: Value(lon),
+      altGnss: altGnss == null && nullToAbsent
+          ? const Value.absent()
+          : Value(altGnss),
       accuracyM: Value(accuracyM),
       speedMps: speedMps == null && nullToAbsent
           ? const Value.absent()
@@ -1074,6 +1104,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       timeNanos: serializer.fromJson<int>(json['timeNanos']),
       lat: serializer.fromJson<double>(json['lat']),
       lon: serializer.fromJson<double>(json['lon']),
+      altGnss: serializer.fromJson<double?>(json['altGnss']),
       accuracyM: serializer.fromJson<double>(json['accuracyM']),
       speedMps: serializer.fromJson<double?>(json['speedMps']),
       bearingDeg: serializer.fromJson<double?>(json['bearingDeg']),
@@ -1089,6 +1120,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       'timeNanos': serializer.toJson<int>(timeNanos),
       'lat': serializer.toJson<double>(lat),
       'lon': serializer.toJson<double>(lon),
+      'altGnss': serializer.toJson<double?>(altGnss),
       'accuracyM': serializer.toJson<double>(accuracyM),
       'speedMps': serializer.toJson<double?>(speedMps),
       'bearingDeg': serializer.toJson<double?>(bearingDeg),
@@ -1102,6 +1134,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     int? timeNanos,
     double? lat,
     double? lon,
+    Value<double?> altGnss = const Value.absent(),
     double? accuracyM,
     Value<double?> speedMps = const Value.absent(),
     Value<double?> bearingDeg = const Value.absent(),
@@ -1112,6 +1145,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     timeNanos: timeNanos ?? this.timeNanos,
     lat: lat ?? this.lat,
     lon: lon ?? this.lon,
+    altGnss: altGnss.present ? altGnss.value : this.altGnss,
     accuracyM: accuracyM ?? this.accuracyM,
     speedMps: speedMps.present ? speedMps.value : this.speedMps,
     bearingDeg: bearingDeg.present ? bearingDeg.value : this.bearingDeg,
@@ -1126,6 +1160,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       timeNanos: data.timeNanos.present ? data.timeNanos.value : this.timeNanos,
       lat: data.lat.present ? data.lat.value : this.lat,
       lon: data.lon.present ? data.lon.value : this.lon,
+      altGnss: data.altGnss.present ? data.altGnss.value : this.altGnss,
       accuracyM: data.accuracyM.present ? data.accuracyM.value : this.accuracyM,
       speedMps: data.speedMps.present ? data.speedMps.value : this.speedMps,
       bearingDeg: data.bearingDeg.present
@@ -1145,6 +1180,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
           ..write('timeNanos: $timeNanos, ')
           ..write('lat: $lat, ')
           ..write('lon: $lon, ')
+          ..write('altGnss: $altGnss, ')
           ..write('accuracyM: $accuracyM, ')
           ..write('speedMps: $speedMps, ')
           ..write('bearingDeg: $bearingDeg, ')
@@ -1160,6 +1196,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     timeNanos,
     lat,
     lon,
+    altGnss,
     accuracyM,
     speedMps,
     bearingDeg,
@@ -1174,6 +1211,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
           other.timeNanos == this.timeNanos &&
           other.lat == this.lat &&
           other.lon == this.lon &&
+          other.altGnss == this.altGnss &&
           other.accuracyM == this.accuracyM &&
           other.speedMps == this.speedMps &&
           other.bearingDeg == this.bearingDeg &&
@@ -1186,6 +1224,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
   final Value<int> timeNanos;
   final Value<double> lat;
   final Value<double> lon;
+  final Value<double?> altGnss;
   final Value<double> accuracyM;
   final Value<double?> speedMps;
   final Value<double?> bearingDeg;
@@ -1196,6 +1235,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     this.timeNanos = const Value.absent(),
     this.lat = const Value.absent(),
     this.lon = const Value.absent(),
+    this.altGnss = const Value.absent(),
     this.accuracyM = const Value.absent(),
     this.speedMps = const Value.absent(),
     this.bearingDeg = const Value.absent(),
@@ -1207,6 +1247,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     required int timeNanos,
     required double lat,
     required double lon,
+    this.altGnss = const Value.absent(),
     required double accuracyM,
     this.speedMps = const Value.absent(),
     this.bearingDeg = const Value.absent(),
@@ -1223,6 +1264,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     Expression<int>? timeNanos,
     Expression<double>? lat,
     Expression<double>? lon,
+    Expression<double>? altGnss,
     Expression<double>? accuracyM,
     Expression<double>? speedMps,
     Expression<double>? bearingDeg,
@@ -1234,6 +1276,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
       if (timeNanos != null) 'time_nanos': timeNanos,
       if (lat != null) 'lat': lat,
       if (lon != null) 'lon': lon,
+      if (altGnss != null) 'alt_gnss': altGnss,
       if (accuracyM != null) 'accuracy_m': accuracyM,
       if (speedMps != null) 'speed_mps': speedMps,
       if (bearingDeg != null) 'bearing_deg': bearingDeg,
@@ -1247,6 +1290,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     Value<int>? timeNanos,
     Value<double>? lat,
     Value<double>? lon,
+    Value<double?>? altGnss,
     Value<double>? accuracyM,
     Value<double?>? speedMps,
     Value<double?>? bearingDeg,
@@ -1258,6 +1302,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
       timeNanos: timeNanos ?? this.timeNanos,
       lat: lat ?? this.lat,
       lon: lon ?? this.lon,
+      altGnss: altGnss ?? this.altGnss,
       accuracyM: accuracyM ?? this.accuracyM,
       speedMps: speedMps ?? this.speedMps,
       bearingDeg: bearingDeg ?? this.bearingDeg,
@@ -1283,6 +1328,9 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     if (lon.present) {
       map['lon'] = Variable<double>(lon.value);
     }
+    if (altGnss.present) {
+      map['alt_gnss'] = Variable<double>(altGnss.value);
+    }
     if (accuracyM.present) {
       map['accuracy_m'] = Variable<double>(accuracyM.value);
     }
@@ -1306,6 +1354,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
           ..write('timeNanos: $timeNanos, ')
           ..write('lat: $lat, ')
           ..write('lon: $lon, ')
+          ..write('altGnss: $altGnss, ')
           ..write('accuracyM: $accuracyM, ')
           ..write('speedMps: $speedMps, ')
           ..write('bearingDeg: $bearingDeg, ')
@@ -2321,6 +2370,7 @@ typedef $$TrackPointsTableCreateCompanionBuilder =
       required int timeNanos,
       required double lat,
       required double lon,
+      Value<double?> altGnss,
       required double accuracyM,
       Value<double?> speedMps,
       Value<double?> bearingDeg,
@@ -2333,6 +2383,7 @@ typedef $$TrackPointsTableUpdateCompanionBuilder =
       Value<int> timeNanos,
       Value<double> lat,
       Value<double> lon,
+      Value<double?> altGnss,
       Value<double> accuracyM,
       Value<double?> speedMps,
       Value<double?> bearingDeg,
@@ -2387,6 +2438,11 @@ class $$TrackPointsTableFilterComposer
 
   ColumnFilters<double> get lon => $composableBuilder(
     column: $table.lon,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get altGnss => $composableBuilder(
+    column: $table.altGnss,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2463,6 +2519,11 @@ class $$TrackPointsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get altGnss => $composableBuilder(
+    column: $table.altGnss,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get accuracyM => $composableBuilder(
     column: $table.accuracyM,
     builder: (column) => ColumnOrderings(column),
@@ -2527,6 +2588,9 @@ class $$TrackPointsTableAnnotationComposer
 
   GeneratedColumn<double> get lon =>
       $composableBuilder(column: $table.lon, builder: (column) => column);
+
+  GeneratedColumn<double> get altGnss =>
+      $composableBuilder(column: $table.altGnss, builder: (column) => column);
 
   GeneratedColumn<double> get accuracyM =>
       $composableBuilder(column: $table.accuracyM, builder: (column) => column);
@@ -2601,6 +2665,7 @@ class $$TrackPointsTableTableManager
                 Value<int> timeNanos = const Value.absent(),
                 Value<double> lat = const Value.absent(),
                 Value<double> lon = const Value.absent(),
+                Value<double?> altGnss = const Value.absent(),
                 Value<double> accuracyM = const Value.absent(),
                 Value<double?> speedMps = const Value.absent(),
                 Value<double?> bearingDeg = const Value.absent(),
@@ -2611,6 +2676,7 @@ class $$TrackPointsTableTableManager
                 timeNanos: timeNanos,
                 lat: lat,
                 lon: lon,
+                altGnss: altGnss,
                 accuracyM: accuracyM,
                 speedMps: speedMps,
                 bearingDeg: bearingDeg,
@@ -2623,6 +2689,7 @@ class $$TrackPointsTableTableManager
                 required int timeNanos,
                 required double lat,
                 required double lon,
+                Value<double?> altGnss = const Value.absent(),
                 required double accuracyM,
                 Value<double?> speedMps = const Value.absent(),
                 Value<double?> bearingDeg = const Value.absent(),
@@ -2633,6 +2700,7 @@ class $$TrackPointsTableTableManager
                 timeNanos: timeNanos,
                 lat: lat,
                 lon: lon,
+                altGnss: altGnss,
                 accuracyM: accuracyM,
                 speedMps: speedMps,
                 bearingDeg: bearingDeg,

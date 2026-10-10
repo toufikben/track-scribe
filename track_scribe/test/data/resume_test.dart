@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
@@ -61,28 +64,71 @@ void main() {
   });
 
   test(
-    'every appended point is durable before the next one arrives (rule ر13)',
+    'every appended point survives an app death: reopen over the same file '
+    'and read the fields back (rule ر13, WAL)',
     () async {
-      final db = AppDatabase(NativeDatabase.memory());
-      final repo = ActivityRepository(db);
-      final id = await repo.insertActivity(
-        uuid: 'u2',
-        sport: 'walk',
-        startWallMillis: 1,
-      );
-      for (var i = 0; i < 50; i++) {
-        await repo.appendPoints(id, [
-          StoredPoint(
-            lat: 36.7538 + i / 10000,
-            lon: 3.1856,
-            timeNanos: i * 1000000000,
-            accuracyM: 5,
-            type: WaypointType.normal,
-          ),
-        ]);
+      // A file-backed database, not NativeDatabase.memory(): memory proves
+      // nothing about durability, because a count on the same in-process
+      // connection stays 50 even if the write never reached storage. We use
+      // a real file so that closing and reopening it is a genuine "app was
+      // killed" simulation — the reopened connection can only see what the
+      // first one actually flushed to disk.
+      final dir = Directory.systemTemp.createTempSync('track_scribe_r13');
+      final file = File(p.join(dir.path, 'durability.sqlite'));
+      try {
+        final db = AppDatabase(NativeDatabase(file));
+        final repo = ActivityRepository(db);
+        final id = await repo.insertActivity(
+          uuid: 'u2',
+          sport: 'walk',
+          startWallMillis: 1,
+        );
+        for (var i = 0; i < 50; i++) {
+          await repo.appendPoints(id, [
+            StoredPoint(
+              lat: 36.7538 + i / 10000,
+              lon: 3.1856,
+              timeNanos: i * 1000000000,
+              accuracyM: 5,
+              type: WaypointType.normal,
+              altitudeM: 120.0 + i,
+            ),
+          ]);
+        }
+
+        // ر13 / spec §4: the durability mechanism is SQLite WAL, and it must
+        // be measured on this file-backed database, not assumed. (An
+        // in-memory database cannot take WAL — hence this is the file test.)
+        final journalMode =
+            (await db.customSelect('PRAGMA journal_mode').get()).single
+                .data['journal_mode'];
+        expect(journalMode, 'wal');
+
+        // App death: the connection is gone entirely, then a fresh one opens
+        // the same backing store on next launch.
+        await db.close();
+        final reopened = AppDatabase(NativeDatabase(file));
+        try {
+          // the write survived — every point is really on disk
+          expect(await ActivityRepository(reopened).pointCount(id), 50);
+
+          // and the just-appended point's fields came back through the new
+          // connection (lat/lon/type, plus the GNSS altitude we now persist)
+          final last =
+              await (reopened.select(reopened.trackPoints)
+                    ..where((t) => t.activityId.equals(id))
+                    ..where((t) => t.timeNanos.equals(49 * 1000000000)))
+                  .getSingle();
+          expect(last.lat, closeTo(36.7538 + 49 / 10000, 1e-9));
+          expect(last.lon, closeTo(3.1856, 1e-9));
+          expect(last.waypointType, WaypointType.normal.name);
+          expect(last.altGnss, closeTo(120.0 + 49, 1e-9));
+        } finally {
+          await reopened.close();
+        }
+      } finally {
+        dir.deleteSync(recursive: true);
       }
-      expect(await repo.pointCount(id), 50);
-      await db.close();
     },
   );
 }

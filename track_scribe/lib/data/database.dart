@@ -31,6 +31,7 @@ class TrackPoints extends Table {
   IntColumn get timeNanos => integer()();
   RealColumn get lat => real()();
   RealColumn get lon => real()();
+  RealColumn get altGnss => real().nullable()();
   RealColumn get accuracyM => real()();
   RealColumn get speedMps => real().nullable()();
   RealColumn get bearingDeg => real().nullable()();
@@ -56,6 +57,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.open() : super(_openLocal());
   @override
   int get schemaVersion => 1;
+
+  // Rule ر13 / spec §4: SQLite WAL is the durability mechanism ("drift +
+  // SQLite WAL"). It is enabled on every open, so a file-backed database is
+  // always in WAL mode and a point is fsynced to the write-ahead log before
+  // the next one arrives. schemaVersion stays 1 (no schema change here).
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    beforeOpen: (details) async {
+      await customStatement('PRAGMA journal_mode=WAL');
+    },
+  );
 }
 
 LazyDatabase _openLocal() => LazyDatabase(() async {
