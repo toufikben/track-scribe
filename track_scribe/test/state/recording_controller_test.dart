@@ -12,9 +12,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         // everyMs pinned at 50 per R21. speed/accuracy are tuned so the run
-        // store gate (max(3 m, 2·a)) is crossed inside the window: the default
-        // 1.4 m/s walk would need ~4.3 s to clear a 6 m gate, which a 1 s wait
-        // cannot reach. 3.5 m/s at 20 Hz crosses the 3 m gate at ~0.9 s.
+        // store gate (max(3 m, 2·a)) is crossable: the default 1.4 m/s walk
+        // would need ~4.3 s to clear a 6 m gate. 3.5 m/s at 20 Hz crosses the
+        // 3 m gate at ~0.9 s.
         fixSourceProvider.overrideWithValue(
           SyntheticFixSource(everyMs: 50, speedMps: 3.5, accuracyM: 0.5),
         ),
@@ -24,13 +24,13 @@ void main() {
     final controller = container.read(recordingProvider.notifier);
 
     await controller.start();
-    await Future<void>.delayed(const Duration(milliseconds: 200));
+    await _until(() => container.read(recordingProvider).phase == RecordingPhase.recording);
     expect(container.read(recordingProvider).phase, RecordingPhase.recording);
 
-    await Future<void>.delayed(const Duration(seconds: 2));
     // Asserted BEFORE stop(): stop() resets the panel state (engine dropped)
     // per the brief's verbatim controller design, so after stop() the live
     // counters are gone by design.
+    await _until(() => container.read(recordingProvider).distanceM > 0);
     final state = container.read(recordingProvider);
     expect(state.distanceM, greaterThan(0));
     expect(state.fixCount, greaterThan(0));
@@ -44,7 +44,7 @@ void main() {
     final received = <int>[];
     final sub = source.fixes.listen((f) => received.add(f.timeNanos));
     await source.start();
-    await Future<void>.delayed(const Duration(milliseconds: 120));
+    await _until(() => received.length >= 3);
     await source.stop();
     await sub.cancel();
     expect(received.length, greaterThanOrEqualTo(2));
@@ -56,4 +56,18 @@ void main() {
       );
     }
   });
+}
+
+/// Waits for [condition] instead of sleeping a fixed window: the source stamps
+/// its fixes with a real [Stopwatch] and a wall-clock timer, so any deadline
+/// tight enough to catch a broken source is also tight enough to lose to this
+/// 2-core box under load (observed: a 2 s wait missing the gate crossing).
+/// Returning without the condition lets the caller's own expectation fail with
+/// its real message rather than a timing complaint.
+Future<void> _until(bool Function() condition,
+    {Duration budget = const Duration(seconds: 10)}) async {
+  final deadline = DateTime.now().add(budget);
+  while (!condition() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
 }
