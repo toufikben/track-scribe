@@ -13,13 +13,11 @@ class StopButton extends StatelessWidget {
     required this.phase,
     required this.onStart,
     required this.onStop,
-    required this.onToggle,
   });
 
   final RecordingPhase phase;
   final VoidCallback onStart;
   final VoidCallback onStop;
-  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {

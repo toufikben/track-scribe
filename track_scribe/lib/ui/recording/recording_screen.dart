@@ -74,13 +74,6 @@ class RecordingScreen extends ConsumerWidget {
                         phase: s.phase,
                         onStart: controller.start,
                         onStop: controller.stop,
-                        onToggle: () {
-                          if (s.phase == RecordingPhase.recording) {
-                            controller.stop();
-                          } else {
-                            controller.start();
-                          }
-                        },
                       ),
                     ],
                   ),
