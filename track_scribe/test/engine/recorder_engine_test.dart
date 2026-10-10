@@ -157,4 +157,69 @@ void main() {
     expect(idleSeen[14], WaypointType.idle);              // stays idle, time flows
     expect(still.distanceMeters, 0.0);
   });
+
+  test('fix-r2 #1: idle→resume appends EXACTLY one point and bills the pending movement once', () {
+    // Scenario A: the resume movement exceeds the store gate. Buggy flow:
+    // _updateIdle's resume branch appended the fix (addDistance:false), then
+    // the gate branch re-ran for the SAME fix and appended it again with
+    // +0 m (the anchor was already the fix itself) — double polyline entry,
+    // zero billing of the real 10 m.
+    final seen = <(int, WaypointType)>[];
+    final e = RecorderEngine(cfg, startNanos: 0,
+        rawSink: (fix, verdict) => seen.add((fix.timeNanos ~/ 1000000000, verdict)));
+    e.onFix(walk(dLat: 0, sec: 0));
+    for (int t = 1; t <= 13; t++) { e.onFix(walk(dLat: 0, sec: t)); } // entry marker @13
+    expect(e.isIdle, isTrue);
+    expect(e.storedPoints.length, 2);            // normal@0 + idle marker@13
+    e.onFix(walk(dLat: 10, sec: 15));            // dt=2 s → 5.00 m/s resumes, d=10.008 m ≥ gate
+    expect(e.isIdle, isFalse);
+    expect(e.storedPoints.length, 3);            // exactly ONE append for fix@15
+    expect(e.distanceMeters, closeTo(10.0076, 0.01)); // the pending d billed ONCE
+    expect(seen.last, (15, WaypointType.normal));// truthful verdict for an appended fix
+    expect(seen.length, e.stats.fixCount);       // sink still called exactly once
+
+    // Scenario B: resume movement BELOW the gate. Buggy flow appended once but
+    // fell through to a `skipped` verdict that lied (a point WAS appended) and
+    // billed 0 m of real movement.
+    final seenB = <(int, WaypointType)>[];
+    final b = RecorderEngine(cfg, startNanos: 0,
+        rawSink: (fix, verdict) => seenB.add((fix.timeNanos ~/ 1000000000, verdict)));
+    b.onFix(walk(dLat: 0, sec: 0));
+    for (int t = 1; t <= 13; t++) { b.onFix(walk(dLat: 0, sec: t)); }
+    b.onFix(walk(dLat: 5, sec: 14));             // dt=1 s → 5.0038 m < gate 8 m
+    expect(b.storedPoints.length, 3);            // resume point appended, once
+    expect(b.distanceMeters, closeTo(5.0038, 0.01));
+    expect(seenB.last, (14, WaypointType.normal));
+  });
+
+  test('fix-r2 #2: ر3 idle heartbeat fires while idle with a stale anchor (ر6 keeps distance frozen)', () {
+    // Enter idle @13, then creep at 0.3 m/s — below idleSpeedMps, so the user
+    // is "moving while flagged idle". Buggy flow: the heartbeat compared
+    // against the anchor, which during idle only moves via idle appends, and
+    // the _lastWasIdleMarker guard suppressed them permanently → @28 (15 s
+    // after the last append) nothing was appended.
+    final e = RecorderEngine(cfg, startNanos: 0);
+    e.onFix(walk(dLat: 0, sec: 0));
+    for (int t = 1; t <= 13; t++) { e.onFix(walk(dLat: 0, sec: t)); }
+    expect(e.storedPoints.length, 2);            // normal + entry marker
+    expect(e.isIdle, isTrue);
+    for (int t = 14; t <= 27; t++) { e.onFix(walk(dLat: 0.3 * (t - 13), sec: t)); }
+    expect(e.storedPoints.length, 2);            // 14 s since last append < 15 s
+    expect(e.distanceMeters, 0.0);               // no premature billing
+    e.onFix(walk(dLat: 4.5, sec: 28));           // exactly 15 s after the marker
+    expect(e.isIdle, isTrue);                    // 0.3 m/s — still idle (ر6)
+    expect(e.storedPoints.length, 3);            // the idle heartbeat fired
+    final hb = e.storedPoints.last;
+    expect(hb.type, WaypointType.idle);
+    expect(hb.timeNanos, 28_000_000_000);
+    expect(e.distanceMeters, 0.0);               // ر6: time flows, distance stops
+    // Next heartbeat is 15 s after that APPEND, not after the anchor.
+    for (int t = 29; t <= 42; t++) { e.onFix(walk(dLat: 0.3 * (t - 13), sec: t)); }
+    expect(e.storedPoints.length, 3);            // 14 s — nothing yet
+    e.onFix(walk(dLat: 8.7, sec: 43));           // 15 s after the @28 append
+    expect(e.storedPoints.length, 4);
+    expect(e.storedPoints.last.type, WaypointType.idle);
+    expect(e.storedPoints.last.timeNanos, 43_000_000_000);
+    expect(e.distanceMeters, 0.0);
+  });
 }

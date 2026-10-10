@@ -64,6 +64,15 @@ class RecorderEngine {
   int? _idleSinceNanos;
   bool _idle = false;
   bool _hasAcceptedFix = false;
+
+  /// Fix round 2 (ر3): monotonic time of the LAST append to `_points` — any
+  /// type, including idle markers and rejected keeps. The heartbeat is
+  /// "15 s without a point", so it must be measured against the point stream,
+  /// never against the anchor: during idle the anchor only moves via idle
+  /// appends, and an anchor-based comparison (plus the old `_lastWasIdleMarker`
+  /// guard) made the idle heartbeat permanently unreachable. -1 until the
+  /// first append; the heartbeat check is only reachable after one.
+  int _lastAppendNanos = -1;
   int _fixCount = 0, _rejected = 0, _dropped = 0, _mocks = 0;
   double _distanceM = 0;
 
@@ -123,13 +132,31 @@ class RecorderEngine {
     }
     _resetChain(); // a fix agreeing with the anchor invalidates the chain
 
-    _updateIdle(fix, speed ?? 0.0);
+    final idleEvent = _updateIdle(fix, speed ?? 0.0);
 
-    final heartbeatDue =
-        _ticker.secondsSince(anchor.timeNanos) >= config.forceStoreAfterS;
+    // ر3 heartbeat — "15 s without a point": measured from the last APPEND
+    // (_lastAppendNanos), not from the anchor (fix round 2, Important 2).
+    final heartbeatDue = _lastAppendNanos >= 0 &&
+        _ticker.secondsSince(_lastAppendNanos) >= config.forceStoreAfterS;
+
+    // Fix round 2, Important 1: every path below performs AT MOST one _store
+    // for this fix — `_updateIdle` no longer stores, it only reports the
+    // transition — so a double append is structurally impossible and the
+    // returned verdict always matches the append it made.
+    if (idleEvent == _IdleTransition.resumed) {
+      // Idle→resume: append exactly once and bill the pending `d` measured
+      // from the pre-idle anchor — this is real movement that ended the idle,
+      // never standing-still, so ر6's zero-distance rule does not cover it.
+      _store(fix, WaypointType.normal, addDistance: true);
+      return WaypointType.normal;
+    }
+
     if (_idle) {
-      // ر6 — time flows, distance does not.
-      if (heartbeatDue && !_lastWasIdleMarker) _store(fix, WaypointType.idle, addDistance: false);
+      // ر6 — time flows, distance does not. Entering idle and the heartbeat
+      // share this single store: at most one append per fix.
+      if (heartbeatDue || idleEvent == _IdleTransition.entered) {
+        _store(fix, WaypointType.idle, addDistance: false);
+      }
       return WaypointType.idle;
     }
     if (d >= config.gateFor(fix.accuracyM) || heartbeatDue) {
@@ -139,20 +166,23 @@ class RecorderEngine {
     return WaypointType.skipped;
   }
 
-  bool get _lastWasIdleMarker =>
-      _anchor != null && _anchor!.type == WaypointType.idle;
-
-  void _updateIdle(RawFix fix, double speed) {
+  /// Idle state machine (ر6) with NO store side effects: `_process` owns every
+  /// append, guaranteeing exactly one store decision per fix (fix round 2).
+  _IdleTransition _updateIdle(RawFix fix, double speed) {
     if (speed < config.idleSpeedMps) {
       _idleSinceNanos ??= fix.timeNanos;
       if (!_idle && _ticker.secondsSince(_idleSinceNanos!) >= config.idleAfterS) {
         _idle = true;
-        _store(fix, WaypointType.idle, addDistance: false);
+        return _IdleTransition.entered;
       }
     } else {
       _idleSinceNanos = null;
-      if (_idle) { _idle = false; _store(fix, WaypointType.normal, addDistance: false); }
+      if (_idle) {
+        _idle = false;
+        return _IdleTransition.resumed;
+      }
     }
+    return _IdleTransition.none;
   }
 
   /// R40: genuine transport (walk → car → walk) keeps every post-transport
@@ -192,9 +222,9 @@ class RecorderEngine {
   }
 
   /// Appends to the polyline (`storedPoints`: map, distance, resume
-  /// checkpoint) and moves the anchor only when the point passed the jump
-  /// test — rejected points are kept (ر9) but must never become the
-  /// yardstick (R39).
+  /// checkpoint), stamps the ر3 heartbeat clock (_lastAppendNanos), and moves
+  /// the anchor only when the point passed the jump test — rejected points
+  /// are kept (ر9) but must never become the yardstick (R39).
   StoredPoint _store(RawFix fix, WaypointType type, {required bool addDistance}) {
     final anchor = _anchor;
     if (addDistance && anchor != null) {
@@ -205,7 +235,13 @@ class RecorderEngine {
       type: type, altitudeM: fix.altitudeM, speedMps: fix.speedMps, bearingDeg: fix.bearingDeg,
     );
     _points.add(p);
+    _lastAppendNanos = fix.timeNanos;
     if (type != WaypointType.rejected) _anchor = p;
     return p;
   }
 }
+
+/// Outcome of the ر6 idle state machine for the fix just processed. Exposes no
+/// store side effects — the caller in `_process` makes the single append
+/// decision (fix round 2, Important 1).
+enum _IdleTransition { none, entered, resumed }
