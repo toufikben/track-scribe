@@ -7,6 +7,7 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    permissions: { actions: write }
     defaults: { run: { working-directory: track_scribe } }
     steps:
       - uses: actions/checkout@v4
@@ -23,4 +24,18 @@ jobs:
           name: track-scribe-debug-apk
           path: track_scribe/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
-          retention-days: 5
+          retention-days: 1
+      # Free Actions storage here is 500 MB and each debug APK is ~52 MB. Age-based
+      # retention alone lost the race against a build every ~15 minutes, so the
+      # count is capped too: keep the 3 newest, drop the rest.
+      - name: keep only the 3 newest APK artifacts
+        env: { GH_TOKEN: ${{ github.token }} }
+        run: |
+          # Cleanup must never turn a green build red, so every failure is swallowed.
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts" \
+            --jq '[.artifacts[] | select(.expired == false and .name == "track-scribe-debug-apk")]
+                  | sort_by(.created_at) | .[0:-3] | .[].id' 2>/dev/null) || ids=""
+          for id in $ids; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" >/dev/null 2>&1 || true
+          done
+        working-directory: .
