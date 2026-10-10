@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/theme/theme.dart';
+import 'package:track_scribe/theme/typography.dart';
 
 /// Spec §5 law, applied to the *theme*: every slot of `AppTheme.dark`'s text
 /// theme must be a certified Palette text token at >= 4.5:1 on `bg`, with no
@@ -10,21 +11,37 @@ import 'package:track_scribe/theme/theme.dart';
 /// to obey the law by construction.
 void main() {
   List<TextStyle?> allSlots(TextTheme t) => [
-        t.displayLarge, t.displayMedium, t.displaySmall,
-        t.headlineLarge, t.headlineMedium, t.headlineSmall,
-        t.titleLarge, t.titleMedium, t.titleSmall,
-        t.bodyLarge, t.bodyMedium, t.bodySmall,
-        t.labelLarge, t.labelMedium, t.labelSmall,
-      ];
+    t.displayLarge,
+    t.displayMedium,
+    t.displaySmall,
+    t.headlineLarge,
+    t.headlineMedium,
+    t.headlineSmall,
+    t.titleLarge,
+    t.titleMedium,
+    t.titleSmall,
+    t.bodyLarge,
+    t.bodyMedium,
+    t.bodySmall,
+    t.labelLarge,
+    t.labelMedium,
+    t.labelSmall,
+  ];
 
   test('every text theme slot is an opaque Palette text token', () {
     final allowed = [Palette.text, Palette.textSecondary, Palette.accent];
     for (final style in allSlots(AppTheme.dark.textTheme)) {
       expect(style, isNotNull, reason: 'a null slot cannot satisfy the law');
-      expect(allowed, contains(style!.color),
-          reason: '${style.fontFamily} slot colour is not a Palette text token');
+      expect(
+        allowed,
+        contains(style!.color),
+        reason: '${style.fontFamily} slot colour is not a Palette text token',
+      );
       expect(style.color!.a, 1.0, reason: 'spec §5 bans translucent stat text');
-      expect(contrastRatio(style.color!, Palette.bg), greaterThanOrEqualTo(4.5));
+      expect(
+        contrastRatio(style.color!, Palette.bg),
+        greaterThanOrEqualTo(4.5),
+      );
     }
   });
 
@@ -37,6 +54,19 @@ void main() {
     expect(AppTheme.dark.textTheme.bodyMedium!.color, Palette.text);
   });
 
+  test('every slot carries the bundled Arabic family (R55)', () {
+    // fontFamily is stamped via TextTheme.apply, so it holds on ALL 15 slots,
+    // not just the five authored overrides; digit-advance uniformity is
+    // unverified until the on-device counter check (Task 11).
+    for (final style in allSlots(AppTheme.dark.textTheme)) {
+      expect(
+        style!.fontFamily,
+        kFontFamily,
+        reason: 'slot missing kFontFamily',
+      );
+    }
+  });
+
   test('the five authored overrides still win', () {
     final t = AppTheme.dark.textTheme;
     expect(t.displaySmall!.color, Palette.accent);
@@ -46,20 +76,27 @@ void main() {
     expect(t.labelMedium!.color, Palette.textSecondary);
   });
 
-  testWidgets('a bare Text() under AppTheme.dark inherits light text', (tester) async {
+  testWidgets('a bare Text() under AppTheme.dark inherits light text', (
+    tester,
+  ) async {
     late TextStyle inherited;
-    await tester.pumpWidget(MaterialApp(
-      theme: AppTheme.dark,
-      home: Scaffold(
-        body: Builder(
-          builder: (context) {
-            inherited = DefaultTextStyle.of(context).style;
-            return const SizedBox();
-          },
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) {
+              inherited = DefaultTextStyle.of(context).style;
+              return const SizedBox();
+            },
+          ),
         ),
       ),
-    ));
+    );
     expect(inherited.color, Palette.text);
-    expect(contrastRatio(inherited.color!, Palette.bg), greaterThanOrEqualTo(4.5));
+    expect(
+      contrastRatio(inherited.color!, Palette.bg),
+      greaterThanOrEqualTo(4.5),
+    );
   });
 }
