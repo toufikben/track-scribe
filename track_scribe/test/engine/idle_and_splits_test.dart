@@ -6,27 +6,20 @@ import 'package:track_scribe/engine/sport_config.dart';
 import 'package:track_scribe/engine/splits.dart';
 
 RawFix at({required double dLat, required int sec, double? speed}) => RawFix(
-  lat: 36.7538 + dLat / 111111.0,
-  lon: 3.1856,
-  timeNanos: sec * 1000000000,
-  accuracyM: 3,
-  speedMps: speed,
-);
+      lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+      timeNanos: sec * 1000000000, accuracyM: 3, speedMps: speed);
 
 void main() {
   test('re6: 5 minutes standing still costs zero distance but full time', () {
     final e = RecorderEngine(SportConfig.forSport(Sport.walk), startNanos: 0);
     e.onFix(at(dLat: 0, sec: 0, speed: 1.4));
     for (var s = 1; s <= 300; s++) {
-      e.onFix(at(dLat: 0, sec: s, speed: 0.0)); // same coordinates, stopped
+      e.onFix(at(dLat: 0, sec: s, speed: 0.0));   // same coordinates, stopped
       expect(e.distanceMeters, 0.0, reason: 'drift inflated at second $s');
     }
     expect(e.isIdle, isTrue);
     expect(e.elapsedNanos, 300_000_000_000);
-    expect(
-      e.storedPoints.where((p) => p.type == WaypointType.idle),
-      isNotEmpty,
-    );
+    expect(e.storedPoints.where((p) => p.type == WaypointType.idle), isNotEmpty);
   });
 
   test('a 1 km straight-line walk yields one full split at true distance', () {
@@ -48,9 +41,7 @@ void main() {
 
   test('computeSplits is empty before the first kilometre', () {
     final e = RecorderEngine(SportConfig.forSport(Sport.walk), startNanos: 0);
-    for (var i = 0; i <= 60; i++) {
-      e.onFix(at(dLat: i * 10.0, sec: i * 8, speed: 1.25));
-    }
+    for (var i = 0; i <= 60; i++) { e.onFix(at(dLat: i * 10.0, sec: i * 8, speed: 1.25)); }
     expect(e.distanceMeters, greaterThan(400));
     expect(computeSplits(e.storedPoints), isEmpty);
   });
@@ -64,18 +55,10 @@ void main() {
   // too large.
   test('R11: second split pace is the second kilometre only', () {
     final sessionStart = 1000 * 1000000000;
-    RawFix atOffset({required double dLat, required int sec, double? speed}) =>
-        RawFix(
-          lat: 36.7538 + dLat / 111111.0,
-          lon: 3.1856,
-          timeNanos: sessionStart + sec * 1000000000,
-          accuracyM: 3,
-          speedMps: speed,
-        );
-    final e = RecorderEngine(
-      SportConfig.forSport(Sport.walk),
-      startNanos: sessionStart,
-    );
+    RawFix atOffset({required double dLat, required int sec, double? speed}) => RawFix(
+          lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+          timeNanos: sessionStart + sec * 1000000000, accuracyM: 3, speedMps: speed);
+    final e = RecorderEngine(SportConfig.forSport(Sport.walk), startNanos: sessionStart);
     const mPerStep = 5.0;
     for (var i = 0; i * mPerStep <= 2000; i++) {
       e.onFix(atOffset(dLat: i * mPerStep, sec: i * 4, speed: 1.25));
@@ -112,35 +95,18 @@ void main() {
   // without depending on engine fixture tuning.
   test('computeSplits skips rejected points and survives zero-length idle segments', () {
     StoredPoint sp(double dLat, int sec, WaypointType type) => StoredPoint(
-      lat: 36.7538 + dLat / 111111.0,
-      lon: 3.1856,
-      timeNanos: sec * 1000000000,
-      accuracyM: 3,
-      type: type,
-    );
-    final m500 = haversineMeters(
-      36.7538,
-      3.1856,
-      36.7538 + 500 / 111111.0,
-      3.1856,
-    );
+        lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+        timeNanos: sec * 1000000000, accuracyM: 3, type: type);
+    final m500 = haversineMeters(36.7538, 3.1856, 36.7538 + 500 / 111111.0, 3.1856);
     expect(m500, closeTo(500.378, 1)); // sanity: 1 dLat unit ~ 1.00076 m here
     final pts = [
       sp(0, 0, WaypointType.normal),
-      sp(
-        60000,
-        10,
-        WaypointType.rejected,
-      ), // 60 km ghost: never part of the path
-      sp(500, 20, WaypointType.normal), // ~500.4 m along the true path
-      sp(500, 35, WaypointType.idle), // idle heartbeat, same coords — seg == 0
-      sp(500, 50, WaypointType.idle), // again — must not divide by zero
-      sp(1000, 60, WaypointType.normal), // crosses 1000 m on this segment
-      sp(
-        1000,
-        75,
-        WaypointType.idle,
-      ), // trailing idle — no extrapolation past it
+      sp(60000, 10, WaypointType.rejected), // 60 km ghost: never part of the path
+      sp(500, 20, WaypointType.normal),     // ~500.4 m along the true path
+      sp(500, 35, WaypointType.idle),       // idle heartbeat, same coords — seg == 0
+      sp(500, 50, WaypointType.idle),       // again — must not divide by zero
+      sp(1000, 60, WaypointType.normal),    // crosses 1000 m on this segment
+      sp(1000, 75, WaypointType.idle),      // trailing idle — no extrapolation past it
     ];
     final splits = computeSplits(pts);
     // If rejected points were treated as path, the 60 km jump would place the
@@ -168,43 +134,30 @@ void main() {
   // With the shipped defect the 2000 m crossing reuses frac = 1000/segM, so km2
   // lands at the same instant as km1: elapsedNanos does not advance and
   // paceSecPerKm collapses to 0.
-  test(
-    'multi-boundary segment interpolates each crossing from segment entry',
-    () {
-      StoredPoint sp(double dLat, int sec) => StoredPoint(
-        lat: 36.7538 + dLat / 111111.0,
-        lon: 3.1856,
-        timeNanos: sec * 1000000000,
-        accuracyM: 3,
-        type: WaypointType.normal,
-      );
-      final a = sp(0, 0);
-      final b = sp(2500, 100);
-      final segM = a.distanceTo(b);
-      expect(segM, greaterThanOrEqualTo(2000)); // spans km1 and km2
-      expect(segM, lessThan(3000)); // exactly two boundaries
-      final perKmSecs = 1000.0 / segM * 100.0; // fixture-derived, ~39.97 s
-      expect(perKmSecs, closeTo(40, 0.5)); // the reviewer's "≈ 40 s"
+  test('multi-boundary segment interpolates each crossing from segment entry', () {
+    StoredPoint sp(double dLat, int sec) => StoredPoint(
+        lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+        timeNanos: sec * 1000000000, accuracyM: 3, type: WaypointType.normal);
+    final a = sp(0, 0);
+    final b = sp(2500, 100);
+    final segM = a.distanceTo(b);
+    expect(segM, greaterThanOrEqualTo(2000)); // spans km1 and km2
+    expect(segM, lessThan(3000));             // exactly two boundaries
+    final perKmSecs = 1000.0 / segM * 100.0;  // fixture-derived, ~39.97 s
+    expect(perKmSecs, closeTo(40, 0.5));      // the reviewer's "≈ 40 s"
 
-      final splits = computeSplits([a, b]);
-      expect(splits.length, 2);
-      expect(splits[0].kmIndex, 1);
-      expect(splits[1].kmIndex, 2);
-      // km1 crossing = 1000 m fraction of the single segment (~40 s).
-      expect(
-        splits[0].elapsedNanos / 1e9,
-        closeTo(1000.0 / segM * 100.0, 0.001),
-      );
-      // km2 crossing = 2000 m fraction — NOT a repeat of the km1 instant.
-      expect(
-        splits[1].elapsedNanos / 1e9,
-        closeTo(2000.0 / segM * 100.0, 0.001),
-      );
-      // Each per-kilometre pace is the same linear slice (~40 s).
-      expect(splits[0].paceSecPerKm, closeTo(perKmSecs, 0.001));
-      expect(splits[1].paceSecPerKm, closeTo(perKmSecs, 0.001));
-    },
-  );
+    final splits = computeSplits([a, b]);
+    expect(splits.length, 2);
+    expect(splits[0].kmIndex, 1);
+    expect(splits[1].kmIndex, 2);
+    // km1 crossing = 1000 m fraction of the single segment (~40 s).
+    expect(splits[0].elapsedNanos / 1e9, closeTo(1000.0 / segM * 100.0, 0.001));
+    // km2 crossing = 2000 m fraction — NOT a repeat of the km1 instant.
+    expect(splits[1].elapsedNanos / 1e9, closeTo(2000.0 / segM * 100.0, 0.001));
+    // Each per-kilometre pace is the same linear slice (~40 s).
+    expect(splits[0].paceSecPerKm, closeTo(perKmSecs, 0.001));
+    expect(splits[1].paceSecPerKm, closeTo(perKmSecs, 0.001));
+  });
 
   // Same defect class, three crossings inside one kept segment (e.g. a
   // 0 -> ~3500 m jump over 140 s). Every km pace must stay the uniform linear
@@ -212,18 +165,14 @@ void main() {
   // instant, giving pace 0).
   test('three-boundary segment keeps every pace on the linear slice', () {
     StoredPoint sp(double dLat, int sec) => StoredPoint(
-      lat: 36.7538 + dLat / 111111.0,
-      lon: 3.1856,
-      timeNanos: sec * 1000000000,
-      accuracyM: 3,
-      type: WaypointType.normal,
-    );
+        lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+        timeNanos: sec * 1000000000, accuracyM: 3, type: WaypointType.normal);
     final a = sp(0, 0);
     final b = sp(3500, 140);
     final segM = a.distanceTo(b);
     expect(segM, greaterThanOrEqualTo(3000)); // spans km1, km2, km3
-    expect(segM, lessThan(4000)); // exactly three boundaries
-    final perKmSecs = 1000.0 / segM * 140.0; // ~39.97 s
+    expect(segM, lessThan(4000));             // exactly three boundaries
+    final perKmSecs = 1000.0 / segM * 140.0;  // ~39.97 s
     expect(perKmSecs, closeTo(40, 0.5));
 
     final splits = computeSplits([a, b]);
