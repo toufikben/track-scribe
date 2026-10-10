@@ -5,8 +5,8 @@ void main() {
   test('rejects a non-monotonic timestamp instead of corrupting duration', () {
     final t = MonotonicTicker();
     expect(t.accept(1000), isTrue);
-    expect(t.accept(900), isFalse);   // clock went backwards → drop
-    expect(t.accept(1000), isFalse);  // duplicate → drop
+    expect(t.accept(900), isFalse); // clock went backwards → drop
+    expect(t.accept(1000), isFalse); // duplicate → drop
     // Rejection must not mutate state: lastNanos still reads the last ACCEPTED value.
     expect(t.lastNanos, 1000);
     expect(t.accept(3_000_000_000), isTrue);

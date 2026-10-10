@@ -17,7 +17,10 @@ class Palette {
   /// test pins, so it is the hex that ships.
   static const Color textSecondary = Color(0xFF9DA4A1);
 
-  /// Route line + big number ONLY.
+  /// The brand signal: route line, the big number, selected/active
+  /// affordances (chip fill under `onAccent`, active status label). It is not
+  /// a general-purpose text colour — and every place it is used must clear the
+  /// contrast law, including on `surface` (pinned in the contrast test).
   static const Color accent = Color(0xFFC6FF3D);
 
   static const Color onAccent = Color(0xFF101315);
@@ -45,8 +48,10 @@ double relativeLuminance(Color c) =>
 /// must never allow. Compose over the real background first (`Color.alphaBlend`)
 /// and measure that.
 double contrastRatio(Color a, Color b) {
-  assert(a.a == 1 && b.a == 1,
-      'contrastRatio takes opaque colours only; blend the alpha first');
+  assert(
+    a.a == 1 && b.a == 1,
+    'contrastRatio takes opaque colours only; blend the alpha first',
+  );
   final l1 = relativeLuminance(a), l2 = relativeLuminance(b);
   return l1 > l2 ? (l1 + 0.05) / (l2 + 0.05) : (l2 + 0.05) / (l1 + 0.05);
 }

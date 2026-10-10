@@ -44,8 +44,12 @@ class RecordingScreen extends ConsumerWidget {
                       ),
                     ),
                     const Positioned(top: 12, right: 12, child: SportChips()),
+                    // Anchored bottom-left, not top-left as the mockup sketch:
+                    // at a real phone width (~393 dp) the chips row and the
+                    // banner together need ~620 dp, so two top corners collide.
+                    // Guarded by test/ui/overlay_bounds_test.dart.
                     const Positioned(
-                      top: 12,
+                      bottom: 12,
                       left: 12,
                       child: GpsStatusBanner(),
                     ),
