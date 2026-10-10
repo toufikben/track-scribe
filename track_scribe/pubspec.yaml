@@ -37,8 +37,6 @@ dev_dependencies:
   gpx: ^2.5.0
 flutter:
   uses-material-design: true
-  assets:
-    - assets/fonts/
   fonts:
     - family: PlexArabic
       fonts:
