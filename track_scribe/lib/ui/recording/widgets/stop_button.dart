@@ -43,16 +43,19 @@ class StopButton extends StatelessWidget {
           child: const Text('ابدأ التسجيل'),
         );
       case RecordingPhase.starting:
-        // Transient guard: the button is dead until the first fix promotes
-        // the phase to recording (or the user stops).
+        // ر7 (Task 9): `starting` now waits for two consecutive fixes ≤ 35 m,
+        // which a real GNSS feed may never deliver — indoors, on a cold start,
+        // with a shaded antenna. The control therefore stays ENABLED and is a
+        // cancel: same Palette.text on Palette.surface pair as Start, same
+        // 56 dp target, and it releases the sensors through stop().
         return ElevatedButton(
           style: ElevatedButton.styleFrom(
             backgroundColor: Palette.surface,
             foregroundColor: Palette.text,
             minimumSize: const Size.fromHeight(56),
           ),
-          onPressed: null,
-          child: const Text('ابدأ التسجيل'),
+          onPressed: onStop,
+          child: const Text('إلغاء'),
         );
     }
   }

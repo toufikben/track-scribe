@@ -1,8 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/source/fix_source.dart';
+import 'package:track_scribe/source/geolocator_fix_source.dart';
 import 'package:track_scribe/source/synthetic_fix_source.dart';
 import 'package:track_scribe/state/recording_controller.dart';
+import '../support/controlled_fix_source.dart';
+
+Future<void> _settle() => Future<void>.delayed(Duration.zero);
 
 void main() {
   // R21: the distance assertion lives here, in a pure-Dart run of the real
@@ -55,6 +59,124 @@ void main() {
         reason: 'monotonic timestamps',
       );
     }
+  });
+
+  // Task 9: the promotion rule is ر7 (two consecutive fixes ≤ 35 m), not
+  // "a fix arrived". A hand-driven source makes both halves of that provable
+  // without a phone.
+
+  test('ر7: the session stays in starting until two consecutive good fixes', () async {
+    final src = ControlledFixSource();
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    expect(src.startCalls, 1);
+
+    src.emit(accuracyM: 3.0); // one good fix: ر7 is not satisfied yet
+    await _settle();
+    var s = container.read(recordingProvider);
+    expect(s.phase, RecordingPhase.starting);
+    expect(s.engine, isNull, reason: 'nothing is recorded before ر7 opens');
+    expect(
+      s.quality,
+      GpsQuality.ok,
+      reason: 'D3: the live tier follows the current fix\'s accuracy; the '
+          'withholding of `recording` is the phase, not a doctored tier',
+    );
+
+    src.emit(accuracyM: 3.0); // the second consecutive good fix
+    await _settle();
+    s = container.read(recordingProvider);
+    expect(s.phase, RecordingPhase.recording);
+    expect(s.quality, GpsQuality.ok);
+    expect(
+      s.fixCount,
+      1,
+      reason: 'the promoting fix is the first the engine ever saw — the '
+          'pre-gate fixes must not reach the recorder',
+    );
+
+    await controller.stop();
+    expect(src.stopCalls, 1);
+    expect(container.read(recordingProvider).phase, RecordingPhase.stopped);
+    await src.dispose();
+  });
+
+  test('a signal that never gets good enough is cancellable, not a dead end', () async {
+    // The ruling carried over from Task 7: with a real GNSS source that never
+    // becomes good enough, a button disabled in `starting` would strand the
+    // user forever.
+    final src = ControlledFixSource();
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    src.emitMany(5, accuracyM: 90); // five fixes, none ≤ 35 m
+    await _settle();
+    final s = container.read(recordingProvider);
+    expect(s.phase, RecordingPhase.starting);
+    expect(s.engine, isNull);
+
+    await controller.stop(); // the cancel gesture
+    expect(container.read(recordingProvider).phase, RecordingPhase.stopped);
+    expect(src.stopCalls, 1, reason: 'the sensors are released on cancel too');
+    await src.dispose();
+  });
+
+  test('the quality tier keeps reporting once ر7 has opened', () async {
+    final src = ControlledFixSource();
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    src.emitMany(2, accuracyM: 4.0);
+    await _settle();
+    expect(container.read(recordingProvider).quality, GpsQuality.ok);
+
+    src.emit(accuracyM: 25.0); // 20–35 tier, gate stays open
+    await _settle();
+    var s = container.read(recordingProvider);
+    expect(s.quality, GpsQuality.degraded);
+    expect(s.phase, RecordingPhase.recording);
+
+    src.emit(accuracyM: 90.0); // > 35: the current fix is `searching` (D3 —
+    // the tier table is the authority), while ر7, a start gate, stays open.
+    await _settle();
+    s = container.read(recordingProvider);
+    expect(s.quality, GpsQuality.searching);
+    expect(s.phase, RecordingPhase.recording);
+
+    await controller.stop();
+    await src.dispose();
+  });
+
+  test('a source that cannot start does not strand the UI in starting', () async {
+    final src = ControlledFixSource()
+      ..startFailure = const LocationPermissionDenied();
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    expect(
+      container.read(recordingProvider).phase,
+      RecordingPhase.stopped,
+      reason: 'the permission screen (Task 9b) owns this case; the recorder '
+          'must leave the user a working button, not a spinner',
+    );
+    await src.dispose();
   });
 }
 

@@ -1,4 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Declared exactly to what the recorder uses (Task 9, Step 2). No
+         ACCESS_BACKGROUND_LOCATION: recording runs only while the location
+         service is foregrounded, which keeps the Play review surface small and
+         is all the spec asks for. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="true" />
     <application
         android:label="track_scribe"
         android:name="${applicationName}"
@@ -25,6 +34,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- The service that keeps recording when the activity is not in the
+             foreground (flutter_background_service). Foreground-service type
+             must be declared here for ACCESS_FINE_LOCATION delivery on API 34+,
+             and it is not exported: nothing outside the app may start it. -->
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

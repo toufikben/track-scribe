@@ -1,0 +1,254 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:geolocator/geolocator.dart' as gl;
+import 'package:track_scribe/engine/raw_fix.dart';
+import 'package:track_scribe/source/geolocator_fix_source.dart';
+
+gl.Position pos({
+  double accuracy = 4.0,
+  double altitude = 92.5,
+  double speed = 1.4,
+  double heading = 42.0,
+  bool isMocked = false,
+  bool hasAccuracy = true,
+  bool hasAltitude = true,
+  bool hasSpeed = true,
+  bool hasHeading = true,
+  DateTime? timestamp,
+}) => gl.Position(
+  latitude: 36.7538,
+  longitude: 3.1856,
+  timestamp: timestamp ?? DateTime.utc(2026, 10, 9, 12, 30, 15),
+  accuracy: accuracy,
+  altitude: altitude,
+  altitudeAccuracy: 0.0,
+  heading: heading,
+  headingAccuracy: 0.0,
+  speed: speed,
+  speedAccuracy: 0.0,
+  isMocked: isMocked,
+  hasAccuracy: hasAccuracy,
+  hasAltitude: hasAltitude,
+  hasSpeed: hasSpeed,
+  hasHeading: hasHeading,
+);
+
+/// The plugin call path is injected so the whole production source is verifiable
+/// on the desktop: no phone, no MethodChannel, no fake platform channel.
+GeolocatorFixSource source(
+  Stream<gl.Position> Function(gl.LocationSettings s) positionStream, {
+  gl.LocationPermission checkResult = gl.LocationPermission.whileInUse,
+  gl.LocationPermission requestResult = gl.LocationPermission.whileInUse,
+}) => GeolocatorFixSource(
+  checkPermission: () async => checkResult,
+  requestPermission: () async => requestResult,
+  positionStream: positionStream,
+);
+
+Future<void> _settle() => Future<void>.delayed(Duration.zero);
+
+void main() {
+  test('R67: the stream is asked for a 200 ms-interval, unfiltered LocationManager feed',
+      () async {
+    final asked = <gl.LocationSettings>[];
+    final ctl = StreamController<gl.Position>();
+    final src = source((s) {
+      asked.add(s);
+      return ctl.stream;
+    });
+    await src.start();
+    await _settle();
+
+    expect(asked, hasLength(1));
+    final settings = asked.single as gl.AndroidSettings;
+    expect(settings.accuracy, gl.LocationAccuracy.high);
+    expect(settings.distanceFilter, 0);
+    // The brief's LocationSettings() would have left intervalDuration null,
+    // which geolocator_android turns into 5000 ms — a 0.2 Hz feed. The gate,
+    // the jump test and the 15 s heartbeat all need a real fix rate.
+    expect(settings.intervalDuration, const Duration(milliseconds: 200));
+    // No FusedLocationProvider smoothing/batching of stored data, and no
+    // runtime dependence on Google Play Services.
+    expect(settings.forceLocationManager, isTrue);
+    expect(settings.useMSLAltitude, isFalse, reason: 'geoid alignment is Plan 2');
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('R69: screen-off recording is protected by a wake lock and an ongoing notification', () async {
+    gl.AndroidSettings? asked;
+    final ctl = StreamController<gl.Position>();
+    final src = source((s) {
+      asked = s as gl.AndroidSettings;
+      return ctl.stream;
+    });
+    await src.start();
+    await _settle();
+
+    final n = asked!.foregroundNotificationConfig;
+    expect(n, isNotNull, reason: 'a foreground notification is what keeps the '
+        'location stream alive when the activity is not in the foreground');
+    // Without the wake lock the CPU sleeps and a screen-off walk records a
+    // straight line — the spec's own field test.
+    expect(n!.enableWakeLock, isTrue);
+    expect(n.setOngoing, isTrue);
+    expect(n.notificationTitle, 'تسجيل المسار');
+    expect(n.notificationText, isNotEmpty);
+    expect(n.notificationChannelName, 'تسجيل المسار');
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('Position → RawFix carries the GNSS measurements through (R70)', () async {
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    ctl.add(pos(accuracy: 7.5, altitude: 111.25, speed: 2.2, heading: 270.0));
+    await _settle();
+
+    expect(got, hasLength(1));
+    final fix = got.single;
+    expect(fix.lat, 36.7538);
+    expect(fix.lon, 3.1856);
+    expect(fix.accuracyM, 7.5);
+    expect(fix.altitudeM, 111.25);
+    expect(fix.speedMps, 2.2);
+    expect(fix.bearingDeg, 270.0);
+    expect(fix.isMocked, isFalse);
+    expect(
+      fix.wallMillis,
+      DateTime.utc(2026, 10, 9, 12, 30, 15).millisecondsSinceEpoch,
+    );
+    // ر10 needs the mock flag; it is a non-nullable bool in the plugin, so it
+    // is read directly (the brief's `?? false` does not analyze clean).
+    ctl.add(pos(isMocked: true));
+    await _settle();
+    expect(got[1].isMocked, isTrue);
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('a placeholder measurement is null, never a convincing 0.0', () async {
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    // LocationMapper only sends fields the platform reports (Location.hasX()),
+    // so hasSpeed == false means speed carries NO measurement. Feeding the
+    // engine 0.0 there would make ر6 declare a walking user idle.
+    ctl.add(pos(hasSpeed: false, speed: 0.0, hasAltitude: false, altitude: 0.0));
+    await _settle();
+
+    expect(got.single.speedMps, isNull);
+    expect(got.single.altitudeM, isNull);
+    expect(got.single.accuracyM, isNot(0.0));
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('timestamps are monotonic across the plugin boundary', () async {
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    ctl.add(pos());
+    await _settle();
+    ctl.add(pos());
+    await _settle();
+
+    expect(got[1].timeNanos, greaterThan(got[0].timeNanos));
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('a denied permission throws and never opens the stream', () async {
+    var opened = 0;
+    final src = source(
+      (_) {
+        opened++;
+        return const Stream<gl.Position>.empty();
+      },
+      checkResult: gl.LocationPermission.denied,
+      requestResult: gl.LocationPermission.denied,
+    );
+
+    await expectLater(src.start(), throwsA(isA<LocationPermissionDenied>()));
+    expect(opened, 0, reason: 'no sensors started without permission');
+  });
+
+  test('a permanently denied permission throws too', () async {
+    final src = source(
+      (_) => const Stream<gl.Position>.empty(),
+      checkResult: gl.LocationPermission.deniedForever,
+      requestResult: gl.LocationPermission.deniedForever,
+    );
+    await expectLater(src.start(), throwsA(isA<LocationPermissionDenied>()));
+  });
+
+  test('permission is requested only when it is missing, and a grant opens the stream', () async {
+    var opened = 0;
+    final ctl = StreamController<gl.Position>();
+    final src = source(
+      (_) {
+        opened++;
+        return ctl.stream;
+      },
+      checkResult: gl.LocationPermission.denied,
+      requestResult: gl.LocationPermission.whileInUse,
+    );
+
+    await src.start();
+    expect(opened, 1, reason: 'the user granted it in the dialog, so the feed opens');
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('start → stop → start emits again on the stream a listener already holds', () async {
+    // The FixSource restart contract (lib/source/fix_source.dart): recording
+    // twice in one app session is an ordinary gesture. stop() cancels the
+    // plugin subscription and must NOT close the output controller.
+    final first = StreamController<gl.Position>();
+    final second = StreamController<gl.Position>();
+    final pluginStreams = [first.stream, second.stream];
+    var calls = 0;
+    final src = source((_) => pluginStreams[calls++]);
+
+    final got = <RawFix>[];
+    final sub = src.fixes.listen(got.add); // subscribed before the first start
+
+    await src.start();
+    first.add(pos());
+    await _settle();
+    expect(got, hasLength(1));
+
+    await src.stop();
+    first.add(pos());
+    await _settle();
+    expect(got, hasLength(1), reason: 'stop() really cancelled the plugin stream');
+
+    await src.start();
+    second.add(pos());
+    await _settle();
+    expect(got, hasLength(2), reason: 'the pre-stop listener still receives');
+    expect(calls, 2, reason: 'start() re-subscribed to the plugin');
+
+    await src.stop();
+    await sub.cancel();
+    await first.close();
+    await second.close();
+  });
+}
