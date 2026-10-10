@@ -23,20 +23,33 @@ class SyntheticFixSource implements FixSource {
   final double speedMps;
   final double accuracyM;
 
-  final _c = StreamController<RawFix>.broadcast();
+  StreamController<RawFix>? _c;
   Timer? _t;
   final _sw = Stopwatch();
   double _dLat = 0;
 
+  /// The live controller, reopened only when it is absent or closed, so a
+  /// listener that already holds the stream keeps receiving events.
+  StreamController<RawFix> _stream() {
+    final c = _c;
+    if (c != null && !c.isClosed) return c;
+    return _c = StreamController<RawFix>.broadcast();
+  }
+
   @override
-  Stream<RawFix> get fixes => _c.stream;
+  Stream<RawFix> get fixes => _stream().stream;
 
   @override
   Future<void> start() async {
+    // A closed controller cannot receive events, so a session that follows a
+    // stop() gets a fresh one — that is the start → stop → start contract of
+    // [FixSource]. Position and clock deliberately keep running: a restart that
+    // teleported the walker back to the origin would be an impossible jump.
+    final out = _stream();
     _sw.start();
     _t = Timer.periodic(Duration(milliseconds: everyMs), (_) {
       _dLat += speedMps * (everyMs / 1000.0);
-      _c.add(
+      out.add(
         RawFix(
           lat: 36.7538 + _dLat / 111111.0,
           lon: 3.1856,
@@ -51,7 +64,8 @@ class SyntheticFixSource implements FixSource {
   @override
   Future<void> stop() async {
     _t?.cancel();
+    _t = null;
     _sw.stop();
-    await _c.close();
+    await _c?.close();
   }
 }

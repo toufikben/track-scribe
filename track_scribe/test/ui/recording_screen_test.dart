@@ -124,4 +124,33 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('ابدأ التسجيل'), findsOneWidget);
   });
+
+  testWidgets('a second session starts after the first one stopped', (
+    tester,
+  ) async {
+    // start → stop → start is the ordinary gesture of anyone recording twice
+    // in one app session, with no restart in between.
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const ProviderScope(child: TrackScribeApp()));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    await tester.tap(find.text('ابدأ التسجيل'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('إيقاف'), findsOneWidget);
+    await tester.tap(find.text('إيقاف'));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('ابدأ التسجيل'), findsOneWidget);
+
+    await tester.tap(find.text('ابدأ التسجيل'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(
+      find.text('إيقاف'),
+      findsOneWidget,
+      reason: 'the second session must reach recording, not stall in starting',
+    );
+    await tester.tap(find.text('إيقاف'));
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 }
