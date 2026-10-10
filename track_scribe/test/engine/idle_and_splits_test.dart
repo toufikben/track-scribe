@@ -120,4 +120,67 @@ void main() {
     expect(splits.single.elapsedNanos, closeTo((50 + 10 * frac) * 1e9, 1e6));
     expect(splits.single.paceSecPerKm, closeTo(50 + 10 * frac, 0.001));
   });
+
+  // Fix round 1 (Important): a SINGLE kept segment can span more than one 1000 m
+  // boundary in production, because computeSplits skips WaypointType.rejected
+  // points (ر9) so two consecutive KEPT points may be a whole bus ride apart.
+  // Every crossing after the first must interpolate from the distance captured
+  // at SEGMENT ENTRY, not re-use the first crossing's fraction.
+  // Fixture: two normal points, 0 m @ t=0s -> ~2500 m @ t=100s form ONE segment
+  // that crosses BOTH the 1000 m and 2000 m boundaries. Expected values are
+  // derived from the fixture's OWN haversine distance (linear time across the
+  // single segment), independent of the code under test:
+  //   perKmSecs = 1000 / segM * 100   (≈ 40 s)
+  // With the shipped defect the 2000 m crossing reuses frac = 1000/segM, so km2
+  // lands at the same instant as km1: elapsedNanos does not advance and
+  // paceSecPerKm collapses to 0.
+  test('multi-boundary segment interpolates each crossing from segment entry', () {
+    StoredPoint sp(double dLat, int sec) => StoredPoint(
+        lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+        timeNanos: sec * 1000000000, accuracyM: 3, type: WaypointType.normal);
+    final a = sp(0, 0);
+    final b = sp(2500, 100);
+    final segM = a.distanceTo(b);
+    expect(segM, greaterThanOrEqualTo(2000)); // spans km1 and km2
+    expect(segM, lessThan(3000));             // exactly two boundaries
+    final perKmSecs = 1000.0 / segM * 100.0;  // fixture-derived, ~39.97 s
+    expect(perKmSecs, closeTo(40, 0.5));      // the reviewer's "≈ 40 s"
+
+    final splits = computeSplits([a, b]);
+    expect(splits.length, 2);
+    expect(splits[0].kmIndex, 1);
+    expect(splits[1].kmIndex, 2);
+    // km1 crossing = 1000 m fraction of the single segment (~40 s).
+    expect(splits[0].elapsedNanos / 1e9, closeTo(1000.0 / segM * 100.0, 0.001));
+    // km2 crossing = 2000 m fraction — NOT a repeat of the km1 instant.
+    expect(splits[1].elapsedNanos / 1e9, closeTo(2000.0 / segM * 100.0, 0.001));
+    // Each per-kilometre pace is the same linear slice (~40 s).
+    expect(splits[0].paceSecPerKm, closeTo(perKmSecs, 0.001));
+    expect(splits[1].paceSecPerKm, closeTo(perKmSecs, 0.001));
+  });
+
+  // Same defect class, three crossings inside one kept segment (e.g. a
+  // 0 -> ~3500 m jump over 140 s). Every km pace must stay the uniform linear
+  // slice; the buggy frac repeats for km2 and km3 (both would land at the km1
+  // instant, giving pace 0).
+  test('three-boundary segment keeps every pace on the linear slice', () {
+    StoredPoint sp(double dLat, int sec) => StoredPoint(
+        lat: 36.7538 + dLat / 111111.0, lon: 3.1856,
+        timeNanos: sec * 1000000000, accuracyM: 3, type: WaypointType.normal);
+    final a = sp(0, 0);
+    final b = sp(3500, 140);
+    final segM = a.distanceTo(b);
+    expect(segM, greaterThanOrEqualTo(3000)); // spans km1, km2, km3
+    expect(segM, lessThan(4000));             // exactly three boundaries
+    final perKmSecs = 1000.0 / segM * 140.0;  // ~39.97 s
+    expect(perKmSecs, closeTo(40, 0.5));
+
+    final splits = computeSplits([a, b]);
+    expect(splits.length, 3);
+    for (var k = 0; k < 3; k++) {
+      expect(splits[k].kmIndex, k + 1);
+      expect(splits[k].elapsedNanos / 1e9, closeTo((k + 1) * perKmSecs, 0.001));
+      expect(splits[k].paceSecPerKm, closeTo(perKmSecs, 0.001));
+    }
+  });
 }

@@ -19,6 +19,13 @@ List<Split> computeSplits(List<StoredPoint> points) {
   double travelled = 0;
   int km = 1;
   StoredPoint? prev;
+  // R46: startNanos is anchored on the FIRST point, kept even if that point is
+  // WaypointType.rejected. Spec ر1 makes the session start the elapsed-time
+  // reference, and the engine guarantees the first fix is always stored `normal`
+  // (recorder_engine.dart seeds the first accepted fix as a normal point), so
+  // this never anchors to a rejected entry through the real pipeline. Hand-built
+  // lists are the only way to make the first point rejected; the reference then
+  // intentionally stays at that first timestamp.
   final int startNanos = points.isNotEmpty ? points.first.timeNanos : 0;
 
   for (final p in points) {
@@ -27,9 +34,14 @@ List<Split> computeSplits(List<StoredPoint> points) {
       final seg = haversineMeters(prev.lat, prev.lon, p.lat, p.lon);
       final segTime = p.timeNanos - prev.timeNanos;
       double remaining = seg;
+      // Distance travelled at SEGMENT ENTRY. Every 1000 m crossing inside this
+      // segment interpolates from this anchor, not from the running `travelled`
+      // (which advances after each crossing) — otherwise the 2nd+ boundary in a
+      // single segment reuses the first crossing's fraction (fix round 1).
+      final double segStartTravelled = travelled;
       while (travelled + remaining >= km * 1000.0) {
         final need = km * 1000.0 - travelled;
-        final frac = seg == 0 ? 0.0 : need / seg;
+        final frac = seg == 0 ? 0.0 : (km * 1000.0 - segStartTravelled) / seg;
         final nanosAt = prev.timeNanos + (segTime * frac).round();
         // R11: segment pace in ABSOLUTE time. Split.elapsedNanos is relative
         // to startNanos, so the previous boundary must be re-anchored before
