@@ -68,7 +68,17 @@ class TrackState extends Table {
   Set<Column> get primaryKey => {key};
 }
 
-@DriftDatabase(tables: [Activities, TrackPoints, TrackState])
+// R86: a single key/value row per persisted on/off flag — today only
+// `onboarded`. schemaVersion stays 1: no released app exists, so adding this
+// table (like editing TrackPoints/TrackState earlier) is not a migration.
+class AppFlags extends Table {
+  TextColumn get key => text()();
+  BoolColumn get value => boolean()();
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
+@DriftDatabase(tables: [Activities, TrackPoints, TrackState, AppFlags])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
   AppDatabase.open() : super(_openLocal());

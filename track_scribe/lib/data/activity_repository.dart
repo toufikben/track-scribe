@@ -4,6 +4,12 @@ import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/source/gps_quality.dart';
 
+/// R86: the one flag onboarding writes and [AppGate] reads — whether this
+/// install has ever shown the permission instructions screen. It is a durable
+/// row, so a fresh install re-shows onboarding after a kill, not just after an
+/// uninstall.
+const kOnboardedFlag = 'onboarded';
+
 /// A resume checkpoint decoded back into engine types (rule ر12: the
 /// checkpoint carries the exact distance, elapsed total and last stored point
 /// of the previous session so a killed recording resumes where it stopped).
@@ -184,5 +190,23 @@ class ActivityRepository {
       ..where(_db.trackPoints.activityId.equals(activityId));
     final row = await q.getSingle();
     return row.read(count) ?? 0;
+  }
+
+  /// R86: read one persisted on/off flag; an unwritten key returns [defaultValue].
+  Future<bool> flag(String key, {bool defaultValue = false}) async {
+    final row =
+        await (_db.select(_db.appFlags)
+              ..where((t) => t.key.equals(key))
+              ..limit(1))
+            .getSingleOrNull();
+    return row?.value ?? defaultValue;
+  }
+
+  /// R86: upsert one flag on its primary key, so a second write replaces the
+  /// first instead of colliding.
+  Future<void> setFlag(String key, bool value) {
+    return _db
+        .into(_db.appFlags)
+        .insertOnConflictUpdate(AppFlagsCompanion.insert(key: key, value: value));
   }
 }
