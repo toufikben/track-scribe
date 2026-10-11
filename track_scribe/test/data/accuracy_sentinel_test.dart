@@ -52,6 +52,9 @@ void main() {
           activityId: id,
           lastStored: unmeasured,
           distanceM: 111.0,
+          // R81: required alongside the distance; this case pins the accuracy
+          // sentinel, so the value only has to be carried.
+          elapsedNanos: 1000,
         );
         await db.close();
 

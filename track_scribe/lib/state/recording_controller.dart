@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:math';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,6 +101,16 @@ class RecordingController extends Notifier<RecordingState> {
   bool _awaitingResume = false;
   List<RawFix> _fixesBeforeResume = [];
 
+  /// R81: the elapsed an earlier session of THIS activity had already measured
+  /// when its checkpoint was written (0 for a fresh activity). Every duration
+  /// persisted from this session — each checkpoint and the final
+  /// `Activities` row — is `_resumeElapsedNanos + engine.elapsedNanos`, so the
+  /// stored time and the stored distance are totals of the same sessions.
+  /// Summing measured monotonic durations is not a ر1 violation; only deriving
+  /// a duration from the wall clock would be. The on-screen الوقت stays
+  /// session-only (R79), which is what the user actually watches.
+  int _resumeElapsedNanos = 0;
+
   void setSport(Sport s) {
     if (state.phase != RecordingPhase.stopped) return;
     state = state.copyWith(sport: s);
@@ -153,6 +164,7 @@ class RecordingController extends Notifier<RecordingState> {
     _pointsWritten = 0;
     _activityId = null;
     _resume = null;
+    _resumeElapsedNanos = 0;
     _fixesBeforeResume = [];
     _sessionActive = true;
     ActivityRepository? repo;
@@ -179,6 +191,10 @@ class RecordingController extends Notifier<RecordingState> {
       _resume = null;
       _noteStorageFailure(e);
     }
+    // R81: seed the carried total BEFORE any buffered fix can write a
+    // checkpoint, or the first write of a resumed session would drop the
+    // previous session's time.
+    _resumeElapsedNanos = _resume?.elapsedNanos ?? 0;
     final buffered = _fixesBeforeResume;
     _fixesBeforeResume = [];
     _awaitingResume = false;
@@ -209,8 +225,11 @@ class RecordingController extends Notifier<RecordingState> {
         return;
       }
       final resume = _resume;
-      // R79: distance continues from the checkpoint, elapsed restarts —
-      // the engine seeds only anchor + distance (recorder_engine.dart).
+      // R79: distance continues from the checkpoint and the on-screen الوقت
+      // restarts — the engine seeds only anchor + distance
+      // (recorder_engine.dart). The elapsed a resumed activity must PERSIST is
+      // not the engine's: it is `_resumeElapsedNanos` + this engine's, so the
+      // engine stays free of any cross-process clock (R81).
       e = RecorderEngine(
         SportConfig.forSport(state.sport),
         startNanos: fix.timeNanos,
@@ -264,6 +283,11 @@ class RecordingController extends Notifier<RecordingState> {
       // old anchor with a new distance.
       final lastStored = slice.last;
       final distanceAtSlice = engine.distanceMeters;
+      // R81: the persisted elapsed is this session's measured duration PLUS
+      // what the checkpoint we resumed from already carried — the same total
+      // `distanceAtSlice` has always been, so both halves describe the same
+      // set of sessions.
+      final elapsedAtSlice = _resumeElapsedNanos + engine.elapsedNanos;
       final id = _activityId ??= await repo.insertActivity(
         uuid: _newActivityUuid(),
         sport: sport.name,
@@ -273,10 +297,18 @@ class RecordingController extends Notifier<RecordingState> {
       );
       await repo.appendPoints(id, slice);
       _pointsWritten += slice.length;
+      // R83, the accepted bound: the checkpoint is written AFTER the slice
+      // commits, so if it throws the cursor has already advanced — no stored
+      // point is ever re-written, and this slice's distance/elapsed are missing
+      // from a checkpoint that is now stale by exactly one slice, behind the
+      // storage error already reported. The reverse order is worse: a
+      // checkpoint pointing at rows that never landed loses those rows forever
+      // while the total counts them.
       await repo.saveResume(
         activityId: id,
         lastStored: lastStored,
         distanceM: distanceAtSlice,
+        elapsedNanos: elapsedAtSlice,
       );
     }).catchError((Object error) {
       _noteStorageFailure(error);
@@ -292,8 +324,23 @@ class RecordingController extends Notifier<RecordingState> {
   /// R78 §4: a storage failure neither kills the session nor goes unnoticed —
   /// recording continues, `storageError` tells the UI durability is no longer
   /// claimed, and no async error escapes (the chain owns every throw).
+  /// R82: a failure that arrives after [_release] (the stop drain) has no live
+  /// session to attach it to — `stop()` resets the state one statement later,
+  /// so a state field would be discarded immediately and the error would vanish
+  /// in total silence. It goes to `dart:developer`'s log instead, the channel
+  /// the device checks read with `adb logcat`; the surviving resume row is the
+  /// recovery path, so nothing recorded is lost even though the run ends.
   void _noteStorageFailure(Object error) {
-    if (!_sessionActive) return;
+    if (!_sessionActive) {
+      developer.log(
+        'storage write failed after the session ended, durability was not '
+        'claimed for it: $error',
+        name: 'track_scribe/storage',
+        error: error,
+        level: 1000, // package:logging SEVERE — a data-loss risk, not chatter
+      );
+      return;
+    }
     final s = state;
     state = RecordingState(
       sport: s.sport,
@@ -334,7 +381,9 @@ class RecordingController extends Notifier<RecordingState> {
         final stats = engine.stats;
         await repo.finishActivity(
           activityId: activityId,
-          elapsedNanos: engine.elapsedNanos,
+          // R81: the carried total plus this session's own duration — the same
+          // set of sessions `engine.distanceMeters` already accumulated.
+          elapsedNanos: _resumeElapsedNanos + engine.elapsedNanos,
           distanceM: engine.distanceMeters,
           fixCount: stats.fixCount,
           rejectedCount: stats.rejectedCount,

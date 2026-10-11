@@ -5,17 +5,24 @@ import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/source/gps_quality.dart';
 
 /// A resume checkpoint decoded back into engine types (rule ر12: the
-/// checkpoint carries the exact distance and last stored point of the
-/// previous session so a killed recording resumes where it stopped).
+/// checkpoint carries the exact distance, elapsed total and last stored point
+/// of the previous session so a killed recording resumes where it stopped).
 class ResumeRow {
   const ResumeRow({
     required this.activityId,
     required this.lastStored,
     required this.distanceM,
+    required this.elapsedNanos,
   });
   final int activityId;
   final StoredPoint lastStored;
   final double distanceM;
+
+  /// R81: the activity's elapsed INCLUDING this session's carried predecessors.
+  /// It is a sum of measured monotonic durations, never a wall-clock
+  /// difference (ر1) — the counterpart of [distanceM] so a resumed activity's
+  /// totals describe the same recording.
+  final int elapsedNanos;
 }
 
 class ActivityRepository {
@@ -70,17 +77,22 @@ class ActivityRepository {
     });
   }
 
-  /// Writes the ر12 checkpoint. Elapsed time deliberately does NOT resume:
-  /// the stored `lastTimeNanos` is session-relative monotonic time,
-  /// meaningless in a new process, and the wall clock is banned for
-  /// durations (ر1/R21). After a kill, المسافة continues from `distanceM`
-  /// and الوقت restarts from zero (R79).
+  /// Writes the ر12 checkpoint. The stored `lastTimeNanos` is session-relative
+  /// monotonic time, meaningless in a new process, so the *clock reading* never
+  /// resumes and the wall clock is never a duration source (ر1/R21). R81
+  /// narrows R79's "الوقت restarts from zero": that sentence now describes the
+  /// ON-SCREEN counter during a resumed session, which really does restart,
+  /// while the PERSISTED total — [elapsedNanos] here, and the
+  /// `Activities.elapsedNanos` written from it at stop — ACCUMULATES every
+  /// session's measured duration, exactly as `distanceM` has always done, so
+  /// the two halves of the row describe the same recording.
   /// R76: an unmeasured accuracy in [lastStored] is written as NULL and
   /// reads back through [loadResume] as the sentinel again.
   Future<void> saveResume({
     required int activityId,
     required StoredPoint lastStored,
     required double distanceM,
+    required int elapsedNanos,
   }) {
     // upsert on the primary key `key` (rule ر12: exactly one 'resume' row)
     return _db
@@ -99,6 +111,7 @@ class ActivityRepository {
             ),
             lastType: lastStored.type.name,
             distanceM: distanceM,
+            lastElapsedNanos: Value(elapsedNanos),
           ),
         );
   }
@@ -121,6 +134,7 @@ class ActivityRepository {
         type: WaypointType.values.byName(row.lastType),
       ),
       distanceM: row.distanceM,
+      elapsedNanos: row.lastElapsedNanos,
     );
   }
 
@@ -129,6 +143,10 @@ class ActivityRepository {
   /// `mockDetected` default to zero/false, so a stopped recording must
   /// write its real totals here before the resume row is cleared, or a
   /// later list/export would report an empty activity.
+  /// R81: [elapsedNanos] and [distanceM] must be the SAME activity's totals —
+  /// each already carrying what an earlier session wrote into the checkpoint.
+  /// One session's time against all sessions' distance produces a row that
+  /// validates fine and poisons every average pace read from it.
   Future<void> finishActivity({
     required int activityId,
     required int elapsedNanos,

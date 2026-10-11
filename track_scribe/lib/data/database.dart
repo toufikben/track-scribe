@@ -52,6 +52,18 @@ class TrackState extends Table {
   RealColumn get lastAccuracyM => real().nullable()();
   TextColumn get lastType => text()();
   RealColumn get distanceM => real()();
+  // R81 (I-2): the elapsed this checkpoint's session had measured, INCLUDING
+  // whatever an earlier session carried. Distance was already cumulative here,
+  // while `Activities.elapsedNanos` came from one session only, so a resumed
+  // activity stored all sessions' distance against one session's time — a
+  // valid-looking row whose every average-pace number is wrong. Adding measured
+  // monotonic DURATIONS is not a ر1 violation (ر1 bans deriving a duration from
+  // the wall clock, which still never happens). Nullable is not needed: a
+  // zero-checkpoint is exact.
+  // schemaVersion stays 1 — no released app exists, so editing either table
+  // (this column, or TrackPoints.accuracyM becoming nullable) is not a
+  // migration.
+  IntColumn get lastElapsedNanos => integer().withDefault(const Constant(0))();
   @override
   Set<Column> get primaryKey => {key};
 }

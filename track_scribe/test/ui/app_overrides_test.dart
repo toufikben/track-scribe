@@ -61,15 +61,19 @@ void main() {
     await src.dispose();
   });
 
-  testWidgets('with no overrides the app is self-contained: the fake is untouched', (
+  testWidgets('with no fix-source override the app builds its own SyntheticFixSource '
+      '(M-3: the source is what is NOT overridden here)', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
-    // R80: the only override declared here is the DATABASE one — no fix
-    // source is provided, so the app must fall back to SyntheticFixSource.
+    // R80: the only override declared here is the DATABASE one — which is a
+    // test necessity (`AppDatabase.open()` would reach for path_provider, and
+    // a unit test has no platform), not part of the claim. The claim is about
+    // the FIX SOURCE: none is provided, so the app must fall back to
+    // SyntheticFixSource and this controlled source stays untouched.
     await tester.pumpWidget(TrackScribeApp(overrides: [_dbOverride]));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('ابدأ التسجيل'));

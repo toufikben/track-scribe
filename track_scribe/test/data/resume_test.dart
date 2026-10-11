@@ -42,12 +42,24 @@ void main() {
         type: WaypointType.normal,
       ),
       distanceM: 222.4,
+      // R81: the checkpoint carries the elapsed TOTAL (nanoseconds of measured
+      // monotonic duration across every session that wrote this row).
+      elapsedNanos: 61000,
     );
 
     final r = await repo.loadResume();
     expect(r, isNotNull);
     expect(r!.activityId, id);
     expect(r.distanceM, closeTo(222.4, 0.1));
+    // An exact total that no other column of this row holds: the column's
+    // `Constant(0)` default, and a value copied from `lastTimeNanos`, would
+    // each survive a weaker assertion — only the distinct number pins the
+    // write/read round trip of the new column.
+    expect(
+      r.elapsedNanos,
+      61000,
+      reason: 'R81: elapsed accumulates across a kill instead of resetting',
+    );
     expect(
       r.lastStored.distanceTo(
         const StoredPoint(

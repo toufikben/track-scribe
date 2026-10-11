@@ -44,9 +44,11 @@ const Duration gpsLostAfter = Duration(seconds: 20);
 /// `isFixGoodEnough(inf)` is false (never promotes the gate),
 /// `GpsQualityX.fromAccuracy(inf)` renders `searching` (inf > 35), and
 /// `SportConfig.gateFor(inf)` clamps to `maxStoreDistanceM` — maximum
-/// caution, never permissiveness. `TrackPoints.accuracyM` is a non-null REAL
-/// column, so a heartbeat-forced store of such a fix persists this sentinel;
-/// whether to keep or filter it is Task 9b's decision, not this round's.
+/// caution, never permissiveness. At the persistence boundary
+/// `ActivityRepository` maps the sentinel to SQL NULL on write (`appendPoints`,
+/// `saveResume`) and back to `unmeasuredAccuracyM` on read (`loadResume`), so a
+/// missing measurement is never stored as a number and nothing outside that
+/// boundary ever sees a fake accuracy.
 const double unmeasuredAccuracyM = double.infinity;
 
 /// The "no recording until the signal is good enough" rule, as data.

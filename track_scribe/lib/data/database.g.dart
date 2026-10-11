@@ -1457,6 +1457,18 @@ class $TrackStateTable extends TrackState
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _lastElapsedNanosMeta = const VerificationMeta(
+    'lastElapsedNanos',
+  );
+  @override
+  late final GeneratedColumn<int> lastElapsedNanos = GeneratedColumn<int>(
+    'last_elapsed_nanos',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     key,
@@ -1467,6 +1479,7 @@ class $TrackStateTable extends TrackState
     lastAccuracyM,
     lastType,
     distanceM,
+    lastElapsedNanos,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1548,6 +1561,15 @@ class $TrackStateTable extends TrackState
     } else if (isInserting) {
       context.missing(_distanceMMeta);
     }
+    if (data.containsKey('last_elapsed_nanos')) {
+      context.handle(
+        _lastElapsedNanosMeta,
+        lastElapsedNanos.isAcceptableOrUnknown(
+          data['last_elapsed_nanos']!,
+          _lastElapsedNanosMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1589,6 +1611,10 @@ class $TrackStateTable extends TrackState
         DriftSqlType.double,
         data['${effectivePrefix}distance_m'],
       )!,
+      lastElapsedNanos: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}last_elapsed_nanos'],
+      )!,
     );
   }
 
@@ -1607,6 +1633,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
   final double? lastAccuracyM;
   final String lastType;
   final double distanceM;
+  final int lastElapsedNanos;
   const TrackStateData({
     required this.key,
     required this.activityId,
@@ -1616,6 +1643,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     this.lastAccuracyM,
     required this.lastType,
     required this.distanceM,
+    required this.lastElapsedNanos,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1630,6 +1658,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     }
     map['last_type'] = Variable<String>(lastType);
     map['distance_m'] = Variable<double>(distanceM);
+    map['last_elapsed_nanos'] = Variable<int>(lastElapsedNanos);
     return map;
   }
 
@@ -1645,6 +1674,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
           : Value(lastAccuracyM),
       lastType: Value(lastType),
       distanceM: Value(distanceM),
+      lastElapsedNanos: Value(lastElapsedNanos),
     );
   }
 
@@ -1662,6 +1692,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
       lastAccuracyM: serializer.fromJson<double?>(json['lastAccuracyM']),
       lastType: serializer.fromJson<String>(json['lastType']),
       distanceM: serializer.fromJson<double>(json['distanceM']),
+      lastElapsedNanos: serializer.fromJson<int>(json['lastElapsedNanos']),
     );
   }
   @override
@@ -1676,6 +1707,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
       'lastAccuracyM': serializer.toJson<double?>(lastAccuracyM),
       'lastType': serializer.toJson<String>(lastType),
       'distanceM': serializer.toJson<double>(distanceM),
+      'lastElapsedNanos': serializer.toJson<int>(lastElapsedNanos),
     };
   }
 
@@ -1688,6 +1720,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     Value<double?> lastAccuracyM = const Value.absent(),
     String? lastType,
     double? distanceM,
+    int? lastElapsedNanos,
   }) => TrackStateData(
     key: key ?? this.key,
     activityId: activityId ?? this.activityId,
@@ -1699,6 +1732,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
         : this.lastAccuracyM,
     lastType: lastType ?? this.lastType,
     distanceM: distanceM ?? this.distanceM,
+    lastElapsedNanos: lastElapsedNanos ?? this.lastElapsedNanos,
   );
   TrackStateData copyWithCompanion(TrackStateCompanion data) {
     return TrackStateData(
@@ -1716,6 +1750,9 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
           : this.lastAccuracyM,
       lastType: data.lastType.present ? data.lastType.value : this.lastType,
       distanceM: data.distanceM.present ? data.distanceM.value : this.distanceM,
+      lastElapsedNanos: data.lastElapsedNanos.present
+          ? data.lastElapsedNanos.value
+          : this.lastElapsedNanos,
     );
   }
 
@@ -1729,7 +1766,8 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
           ..write('lastLon: $lastLon, ')
           ..write('lastAccuracyM: $lastAccuracyM, ')
           ..write('lastType: $lastType, ')
-          ..write('distanceM: $distanceM')
+          ..write('distanceM: $distanceM, ')
+          ..write('lastElapsedNanos: $lastElapsedNanos')
           ..write(')'))
         .toString();
   }
@@ -1744,6 +1782,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     lastAccuracyM,
     lastType,
     distanceM,
+    lastElapsedNanos,
   );
   @override
   bool operator ==(Object other) =>
@@ -1756,7 +1795,8 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
           other.lastLon == this.lastLon &&
           other.lastAccuracyM == this.lastAccuracyM &&
           other.lastType == this.lastType &&
-          other.distanceM == this.distanceM);
+          other.distanceM == this.distanceM &&
+          other.lastElapsedNanos == this.lastElapsedNanos);
 }
 
 class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
@@ -1768,6 +1808,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
   final Value<double?> lastAccuracyM;
   final Value<String> lastType;
   final Value<double> distanceM;
+  final Value<int> lastElapsedNanos;
   final Value<int> rowid;
   const TrackStateCompanion({
     this.key = const Value.absent(),
@@ -1778,6 +1819,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     this.lastAccuracyM = const Value.absent(),
     this.lastType = const Value.absent(),
     this.distanceM = const Value.absent(),
+    this.lastElapsedNanos = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TrackStateCompanion.insert({
@@ -1789,6 +1831,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     this.lastAccuracyM = const Value.absent(),
     required String lastType,
     required double distanceM,
+    this.lastElapsedNanos = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : key = Value(key),
        activityId = Value(activityId),
@@ -1806,6 +1849,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     Expression<double>? lastAccuracyM,
     Expression<String>? lastType,
     Expression<double>? distanceM,
+    Expression<int>? lastElapsedNanos,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1817,6 +1861,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
       if (lastAccuracyM != null) 'last_accuracy_m': lastAccuracyM,
       if (lastType != null) 'last_type': lastType,
       if (distanceM != null) 'distance_m': distanceM,
+      if (lastElapsedNanos != null) 'last_elapsed_nanos': lastElapsedNanos,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1830,6 +1875,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     Value<double?>? lastAccuracyM,
     Value<String>? lastType,
     Value<double>? distanceM,
+    Value<int>? lastElapsedNanos,
     Value<int>? rowid,
   }) {
     return TrackStateCompanion(
@@ -1841,6 +1887,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
       lastAccuracyM: lastAccuracyM ?? this.lastAccuracyM,
       lastType: lastType ?? this.lastType,
       distanceM: distanceM ?? this.distanceM,
+      lastElapsedNanos: lastElapsedNanos ?? this.lastElapsedNanos,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1872,6 +1919,9 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     if (distanceM.present) {
       map['distance_m'] = Variable<double>(distanceM.value);
     }
+    if (lastElapsedNanos.present) {
+      map['last_elapsed_nanos'] = Variable<int>(lastElapsedNanos.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1889,6 +1939,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
           ..write('lastAccuracyM: $lastAccuracyM, ')
           ..write('lastType: $lastType, ')
           ..write('distanceM: $distanceM, ')
+          ..write('lastElapsedNanos: $lastElapsedNanos, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2784,6 +2835,7 @@ typedef $$TrackStateTableCreateCompanionBuilder = TrackStateCompanion Function({
   Value<double?> lastAccuracyM,
   required String lastType,
   required double distanceM,
+  Value<int> lastElapsedNanos,
   Value<int> rowid,
 });
 typedef $$TrackStateTableUpdateCompanionBuilder = TrackStateCompanion Function({
@@ -2795,6 +2847,7 @@ typedef $$TrackStateTableUpdateCompanionBuilder = TrackStateCompanion Function({
   Value<double?> lastAccuracyM,
   Value<String> lastType,
   Value<double> distanceM,
+  Value<int> lastElapsedNanos,
   Value<int> rowid,
 });
 
@@ -2844,6 +2897,11 @@ class $$TrackStateTableFilterComposer
 
   ColumnFilters<double> get distanceM => $composableBuilder(
     column: $table.distanceM,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lastElapsedNanos => $composableBuilder(
+    column: $table.lastElapsedNanos,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -2896,6 +2954,11 @@ class $$TrackStateTableOrderingComposer
     column: $table.distanceM,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get lastElapsedNanos => $composableBuilder(
+    column: $table.lastElapsedNanos,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TrackStateTableAnnotationComposer
@@ -2936,6 +2999,11 @@ class $$TrackStateTableAnnotationComposer
 
   GeneratedColumn<double> get distanceM =>
       $composableBuilder(column: $table.distanceM, builder: (column) => column);
+
+  GeneratedColumn<int> get lastElapsedNanos => $composableBuilder(
+    column: $table.lastElapsedNanos,
+    builder: (column) => column,
+  );
 }
 
 class $$TrackStateTableTableManager
@@ -2977,6 +3045,7 @@ class $$TrackStateTableTableManager
                 Value<double?> lastAccuracyM = const Value.absent(),
                 Value<String> lastType = const Value.absent(),
                 Value<double> distanceM = const Value.absent(),
+                Value<int> lastElapsedNanos = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TrackStateCompanion(
                 key: key,
@@ -2987,6 +3056,7 @@ class $$TrackStateTableTableManager
                 lastAccuracyM: lastAccuracyM,
                 lastType: lastType,
                 distanceM: distanceM,
+                lastElapsedNanos: lastElapsedNanos,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2999,6 +3069,7 @@ class $$TrackStateTableTableManager
                 Value<double?> lastAccuracyM = const Value.absent(),
                 required String lastType,
                 required double distanceM,
+                Value<int> lastElapsedNanos = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TrackStateCompanion.insert(
                 key: key,
@@ -3009,6 +3080,7 @@ class $$TrackStateTableTableManager
                 lastAccuracyM: lastAccuracyM,
                 lastType: lastType,
                 distanceM: distanceM,
+                lastElapsedNanos: lastElapsedNanos,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
