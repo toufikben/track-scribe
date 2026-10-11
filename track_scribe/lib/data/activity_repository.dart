@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
+import 'package:track_scribe/source/gps_quality.dart';
 
 /// A resume checkpoint decoded back into engine types (rule ر12: the
 /// checkpoint carries the exact distance and last stored point of the
@@ -40,9 +41,12 @@ class ActivityRepository {
   /// Rule ر13: one `batch()` = one immediate transaction. The returned
   /// future only completes after that transaction has committed, so every
   /// appended point is durable before the caller proceeds to the next one.
-  /// Note: `accuracyM` is a non-null REAL column, so a heartbeat-forced store
-  /// of an unmeasured-accuracy fix persists the `unmeasuredAccuracyM` sentinel;
-  /// what to do with it on read/export is Task 9b's decision.
+  /// R76 boundary mapping: an unmeasured 1σ (`unmeasuredAccuracyM`) is
+  /// written as SQL NULL — a sentinel is a missing measurement, never a
+  /// number in the database. The checkpoint maps the same pair in both
+  /// directions ([saveResume] writes NULL, [loadResume] reads it back as the
+  /// sentinel), so `StoredPoint.accuracyM` stays non-nullable everywhere
+  /// else and ر7 keeps refusing an unmeasured fix after a resume.
   Future<void> appendPoints(int activityId, List<StoredPoint> points) {
     return _db.batch((batch) {
       for (final p in points) {
@@ -54,7 +58,9 @@ class ActivityRepository {
             lat: p.lat,
             lon: p.lon,
             altGnss: Value(p.altitudeM),
-            accuracyM: p.accuracyM,
+            accuracyM: Value(
+              p.accuracyM == unmeasuredAccuracyM ? null : p.accuracyM,
+            ),
             speedMps: Value(p.speedMps),
             bearingDeg: Value(p.bearingDeg),
             waypointType: p.type.name,
@@ -64,6 +70,13 @@ class ActivityRepository {
     });
   }
 
+  /// Writes the ر12 checkpoint. Elapsed time deliberately does NOT resume:
+  /// the stored `lastTimeNanos` is session-relative monotonic time,
+  /// meaningless in a new process, and the wall clock is banned for
+  /// durations (ر1/R21). After a kill, المسافة continues from `distanceM`
+  /// and الوقت restarts from zero (R79).
+  /// R76: an unmeasured accuracy in [lastStored] is written as NULL and
+  /// reads back through [loadResume] as the sentinel again.
   Future<void> saveResume({
     required int activityId,
     required StoredPoint lastStored,
@@ -79,7 +92,11 @@ class ActivityRepository {
             lastTimeNanos: lastStored.timeNanos,
             lastLat: lastStored.lat,
             lastLon: lastStored.lon,
-            lastAccuracyM: lastStored.accuracyM,
+            lastAccuracyM: Value(
+              lastStored.accuracyM == unmeasuredAccuracyM
+                  ? null
+                  : lastStored.accuracyM,
+            ),
             lastType: lastStored.type.name,
             distanceM: distanceM,
           ),
@@ -99,10 +116,39 @@ class ActivityRepository {
         lat: row.lastLat,
         lon: row.lastLon,
         timeNanos: row.lastTimeNanos,
-        accuracyM: row.lastAccuracyM,
+        // R76 read side: NULL means the sentinel, never a fake number.
+        accuracyM: row.lastAccuracyM ?? unmeasuredAccuracyM,
         type: WaypointType.values.byName(row.lastType),
       ),
       distanceM: row.distanceM,
+    );
+  }
+
+  /// Ends an activity cleanly — the counterpart of the ر12 checkpoint: the
+  /// row's `elapsedNanos`, `distanceM`, `fixCount`, `rejectedCount` and
+  /// `mockDetected` default to zero/false, so a stopped recording must
+  /// write its real totals here before the resume row is cleared, or a
+  /// later list/export would report an empty activity.
+  Future<void> finishActivity({
+    required int activityId,
+    required int elapsedNanos,
+    required double distanceM,
+    required int fixCount,
+    required int rejectedCount,
+    required bool mockDetected,
+  }) async {
+    final row =
+        await (_db.select(_db.activities)
+              ..where((t) => t.id.equals(activityId)))
+            .getSingle();
+    await _db.update(_db.activities).replace(
+      row.copyWith(
+        elapsedNanos: elapsedNanos,
+        distanceM: distanceM,
+        fixCount: fixCount,
+        rejectedCount: rejectedCount,
+        mockDetected: mockDetected,
+      ),
     );
   }
 

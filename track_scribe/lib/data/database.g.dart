@@ -835,9 +835,9 @@ class $TrackPointsTable extends TrackPoints
   late final GeneratedColumn<double> accuracyM = GeneratedColumn<double>(
     'accuracy_m',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.double,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _speedMpsMeta = const VerificationMeta(
     'speedMps',
@@ -943,8 +943,6 @@ class $TrackPointsTable extends TrackPoints
         _accuracyMMeta,
         accuracyM.isAcceptableOrUnknown(data['accuracy_m']!, _accuracyMMeta),
       );
-    } else if (isInserting) {
-      context.missing(_accuracyMMeta);
     }
     if (data.containsKey('speed_mps')) {
       context.handle(
@@ -1005,7 +1003,7 @@ class $TrackPointsTable extends TrackPoints
       accuracyM: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}accuracy_m'],
-      )!,
+      ),
       speedMps: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}speed_mps'],
@@ -1034,7 +1032,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
   final double lat;
   final double lon;
   final double? altGnss;
-  final double accuracyM;
+  final double? accuracyM;
   final double? speedMps;
   final double? bearingDeg;
   final String waypointType;
@@ -1045,7 +1043,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     required this.lat,
     required this.lon,
     this.altGnss,
-    required this.accuracyM,
+    this.accuracyM,
     this.speedMps,
     this.bearingDeg,
     required this.waypointType,
@@ -1061,7 +1059,9 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     if (!nullToAbsent || altGnss != null) {
       map['alt_gnss'] = Variable<double>(altGnss);
     }
-    map['accuracy_m'] = Variable<double>(accuracyM);
+    if (!nullToAbsent || accuracyM != null) {
+      map['accuracy_m'] = Variable<double>(accuracyM);
+    }
     if (!nullToAbsent || speedMps != null) {
       map['speed_mps'] = Variable<double>(speedMps);
     }
@@ -1082,7 +1082,9 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       altGnss: altGnss == null && nullToAbsent
           ? const Value.absent()
           : Value(altGnss),
-      accuracyM: Value(accuracyM),
+      accuracyM: accuracyM == null && nullToAbsent
+          ? const Value.absent()
+          : Value(accuracyM),
       speedMps: speedMps == null && nullToAbsent
           ? const Value.absent()
           : Value(speedMps),
@@ -1105,7 +1107,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       lat: serializer.fromJson<double>(json['lat']),
       lon: serializer.fromJson<double>(json['lon']),
       altGnss: serializer.fromJson<double?>(json['altGnss']),
-      accuracyM: serializer.fromJson<double>(json['accuracyM']),
+      accuracyM: serializer.fromJson<double?>(json['accuracyM']),
       speedMps: serializer.fromJson<double?>(json['speedMps']),
       bearingDeg: serializer.fromJson<double?>(json['bearingDeg']),
       waypointType: serializer.fromJson<String>(json['waypointType']),
@@ -1121,7 +1123,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
       'lat': serializer.toJson<double>(lat),
       'lon': serializer.toJson<double>(lon),
       'altGnss': serializer.toJson<double?>(altGnss),
-      'accuracyM': serializer.toJson<double>(accuracyM),
+      'accuracyM': serializer.toJson<double?>(accuracyM),
       'speedMps': serializer.toJson<double?>(speedMps),
       'bearingDeg': serializer.toJson<double?>(bearingDeg),
       'waypointType': serializer.toJson<String>(waypointType),
@@ -1135,7 +1137,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     double? lat,
     double? lon,
     Value<double?> altGnss = const Value.absent(),
-    double? accuracyM,
+    Value<double?> accuracyM = const Value.absent(),
     Value<double?> speedMps = const Value.absent(),
     Value<double?> bearingDeg = const Value.absent(),
     String? waypointType,
@@ -1146,7 +1148,7 @@ class TrackPoint extends DataClass implements Insertable<TrackPoint> {
     lat: lat ?? this.lat,
     lon: lon ?? this.lon,
     altGnss: altGnss.present ? altGnss.value : this.altGnss,
-    accuracyM: accuracyM ?? this.accuracyM,
+    accuracyM: accuracyM.present ? accuracyM.value : this.accuracyM,
     speedMps: speedMps.present ? speedMps.value : this.speedMps,
     bearingDeg: bearingDeg.present ? bearingDeg.value : this.bearingDeg,
     waypointType: waypointType ?? this.waypointType,
@@ -1225,7 +1227,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
   final Value<double> lat;
   final Value<double> lon;
   final Value<double?> altGnss;
-  final Value<double> accuracyM;
+  final Value<double?> accuracyM;
   final Value<double?> speedMps;
   final Value<double?> bearingDeg;
   final Value<String> waypointType;
@@ -1248,7 +1250,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     required double lat,
     required double lon,
     this.altGnss = const Value.absent(),
-    required double accuracyM,
+    this.accuracyM = const Value.absent(),
     this.speedMps = const Value.absent(),
     this.bearingDeg = const Value.absent(),
     required String waypointType,
@@ -1256,7 +1258,6 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
        timeNanos = Value(timeNanos),
        lat = Value(lat),
        lon = Value(lon),
-       accuracyM = Value(accuracyM),
        waypointType = Value(waypointType);
   static Insertable<TrackPoint> custom({
     Expression<int>? id,
@@ -1291,7 +1292,7 @@ class TrackPointsCompanion extends UpdateCompanion<TrackPoint> {
     Value<double>? lat,
     Value<double>? lon,
     Value<double?>? altGnss,
-    Value<double>? accuracyM,
+    Value<double?>? accuracyM,
     Value<double?>? speedMps,
     Value<double?>? bearingDeg,
     Value<String>? waypointType,
@@ -1430,9 +1431,9 @@ class $TrackStateTable extends TrackState
   late final GeneratedColumn<double> lastAccuracyM = GeneratedColumn<double>(
     'last_accuracy_m',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.double,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _lastTypeMeta = const VerificationMeta(
     'lastType',
@@ -1530,8 +1531,6 @@ class $TrackStateTable extends TrackState
           _lastAccuracyMMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_lastAccuracyMMeta);
     }
     if (data.containsKey('last_type')) {
       context.handle(
@@ -1581,7 +1580,7 @@ class $TrackStateTable extends TrackState
       lastAccuracyM: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}last_accuracy_m'],
-      )!,
+      ),
       lastType: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}last_type'],
@@ -1605,7 +1604,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
   final int lastTimeNanos;
   final double lastLat;
   final double lastLon;
-  final double lastAccuracyM;
+  final double? lastAccuracyM;
   final String lastType;
   final double distanceM;
   const TrackStateData({
@@ -1614,7 +1613,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     required this.lastTimeNanos,
     required this.lastLat,
     required this.lastLon,
-    required this.lastAccuracyM,
+    this.lastAccuracyM,
     required this.lastType,
     required this.distanceM,
   });
@@ -1626,7 +1625,9 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     map['last_time_nanos'] = Variable<int>(lastTimeNanos);
     map['last_lat'] = Variable<double>(lastLat);
     map['last_lon'] = Variable<double>(lastLon);
-    map['last_accuracy_m'] = Variable<double>(lastAccuracyM);
+    if (!nullToAbsent || lastAccuracyM != null) {
+      map['last_accuracy_m'] = Variable<double>(lastAccuracyM);
+    }
     map['last_type'] = Variable<String>(lastType);
     map['distance_m'] = Variable<double>(distanceM);
     return map;
@@ -1639,7 +1640,9 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
       lastTimeNanos: Value(lastTimeNanos),
       lastLat: Value(lastLat),
       lastLon: Value(lastLon),
-      lastAccuracyM: Value(lastAccuracyM),
+      lastAccuracyM: lastAccuracyM == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastAccuracyM),
       lastType: Value(lastType),
       distanceM: Value(distanceM),
     );
@@ -1656,7 +1659,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
       lastTimeNanos: serializer.fromJson<int>(json['lastTimeNanos']),
       lastLat: serializer.fromJson<double>(json['lastLat']),
       lastLon: serializer.fromJson<double>(json['lastLon']),
-      lastAccuracyM: serializer.fromJson<double>(json['lastAccuracyM']),
+      lastAccuracyM: serializer.fromJson<double?>(json['lastAccuracyM']),
       lastType: serializer.fromJson<String>(json['lastType']),
       distanceM: serializer.fromJson<double>(json['distanceM']),
     );
@@ -1670,7 +1673,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
       'lastTimeNanos': serializer.toJson<int>(lastTimeNanos),
       'lastLat': serializer.toJson<double>(lastLat),
       'lastLon': serializer.toJson<double>(lastLon),
-      'lastAccuracyM': serializer.toJson<double>(lastAccuracyM),
+      'lastAccuracyM': serializer.toJson<double?>(lastAccuracyM),
       'lastType': serializer.toJson<String>(lastType),
       'distanceM': serializer.toJson<double>(distanceM),
     };
@@ -1682,7 +1685,7 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     int? lastTimeNanos,
     double? lastLat,
     double? lastLon,
-    double? lastAccuracyM,
+    Value<double?> lastAccuracyM = const Value.absent(),
     String? lastType,
     double? distanceM,
   }) => TrackStateData(
@@ -1691,7 +1694,9 @@ class TrackStateData extends DataClass implements Insertable<TrackStateData> {
     lastTimeNanos: lastTimeNanos ?? this.lastTimeNanos,
     lastLat: lastLat ?? this.lastLat,
     lastLon: lastLon ?? this.lastLon,
-    lastAccuracyM: lastAccuracyM ?? this.lastAccuracyM,
+    lastAccuracyM: lastAccuracyM.present
+        ? lastAccuracyM.value
+        : this.lastAccuracyM,
     lastType: lastType ?? this.lastType,
     distanceM: distanceM ?? this.distanceM,
   );
@@ -1760,7 +1765,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
   final Value<int> lastTimeNanos;
   final Value<double> lastLat;
   final Value<double> lastLon;
-  final Value<double> lastAccuracyM;
+  final Value<double?> lastAccuracyM;
   final Value<String> lastType;
   final Value<double> distanceM;
   final Value<int> rowid;
@@ -1781,7 +1786,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     required int lastTimeNanos,
     required double lastLat,
     required double lastLon,
-    required double lastAccuracyM,
+    this.lastAccuracyM = const Value.absent(),
     required String lastType,
     required double distanceM,
     this.rowid = const Value.absent(),
@@ -1790,7 +1795,6 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
        lastTimeNanos = Value(lastTimeNanos),
        lastLat = Value(lastLat),
        lastLon = Value(lastLon),
-       lastAccuracyM = Value(lastAccuracyM),
        lastType = Value(lastType),
        distanceM = Value(distanceM);
   static Insertable<TrackStateData> custom({
@@ -1823,7 +1827,7 @@ class TrackStateCompanion extends UpdateCompanion<TrackStateData> {
     Value<int>? lastTimeNanos,
     Value<double>? lastLat,
     Value<double>? lastLon,
-    Value<double>? lastAccuracyM,
+    Value<double?>? lastAccuracyM,
     Value<String>? lastType,
     Value<double>? distanceM,
     Value<int>? rowid,
@@ -2371,7 +2375,7 @@ typedef $$TrackPointsTableCreateCompanionBuilder =
       required double lat,
       required double lon,
       Value<double?> altGnss,
-      required double accuracyM,
+      Value<double?> accuracyM,
       Value<double?> speedMps,
       Value<double?> bearingDeg,
       required String waypointType,
@@ -2384,7 +2388,7 @@ typedef $$TrackPointsTableUpdateCompanionBuilder =
       Value<double> lat,
       Value<double> lon,
       Value<double?> altGnss,
-      Value<double> accuracyM,
+      Value<double?> accuracyM,
       Value<double?> speedMps,
       Value<double?> bearingDeg,
       Value<String> waypointType,
@@ -2666,7 +2670,7 @@ class $$TrackPointsTableTableManager
                 Value<double> lat = const Value.absent(),
                 Value<double> lon = const Value.absent(),
                 Value<double?> altGnss = const Value.absent(),
-                Value<double> accuracyM = const Value.absent(),
+                Value<double?> accuracyM = const Value.absent(),
                 Value<double?> speedMps = const Value.absent(),
                 Value<double?> bearingDeg = const Value.absent(),
                 Value<String> waypointType = const Value.absent(),
@@ -2690,7 +2694,7 @@ class $$TrackPointsTableTableManager
                 required double lat,
                 required double lon,
                 Value<double?> altGnss = const Value.absent(),
-                required double accuracyM,
+                Value<double?> accuracyM = const Value.absent(),
                 Value<double?> speedMps = const Value.absent(),
                 Value<double?> bearingDeg = const Value.absent(),
                 required String waypointType,
@@ -2777,7 +2781,7 @@ typedef $$TrackStateTableCreateCompanionBuilder = TrackStateCompanion Function({
   required int lastTimeNanos,
   required double lastLat,
   required double lastLon,
-  required double lastAccuracyM,
+  Value<double?> lastAccuracyM,
   required String lastType,
   required double distanceM,
   Value<int> rowid,
@@ -2788,7 +2792,7 @@ typedef $$TrackStateTableUpdateCompanionBuilder = TrackStateCompanion Function({
   Value<int> lastTimeNanos,
   Value<double> lastLat,
   Value<double> lastLon,
-  Value<double> lastAccuracyM,
+  Value<double?> lastAccuracyM,
   Value<String> lastType,
   Value<double> distanceM,
   Value<int> rowid,
@@ -2970,7 +2974,7 @@ class $$TrackStateTableTableManager
                 Value<int> lastTimeNanos = const Value.absent(),
                 Value<double> lastLat = const Value.absent(),
                 Value<double> lastLon = const Value.absent(),
-                Value<double> lastAccuracyM = const Value.absent(),
+                Value<double?> lastAccuracyM = const Value.absent(),
                 Value<String> lastType = const Value.absent(),
                 Value<double> distanceM = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -2992,7 +2996,7 @@ class $$TrackStateTableTableManager
                 required int lastTimeNanos,
                 required double lastLat,
                 required double lastLon,
-                required double lastAccuracyM,
+                Value<double?> lastAccuracyM = const Value.absent(),
                 required String lastType,
                 required double distanceM,
                 Value<int> rowid = const Value.absent(),

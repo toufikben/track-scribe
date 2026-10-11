@@ -31,10 +31,24 @@ class RecorderEngine {
   /// fix stamped exactly `startNanos` is legitimate (elapsed 0), and the
   /// ticker's strict `>` gate would silently drop it. The ticker remains the
   /// single source of truth for ordering (ر1) and for every duration below.
+  ///
+  /// R79 (rule ر12): a resumed session seeds ONLY the yardstick — the anchor
+  /// becomes [resumeFrom] and distance starts at [resumeDistanceM]. Nothing
+  /// else carries over on purpose: `_points` is NOT seeded (the persistence
+  /// cursor starts at 0, so old rows are never re-written), and
+  /// `_sessionStartNanos`, `_ticker` and `_lastAppendNanos` are new-process
+  /// monotonic state — elapsed restarts, distance continues. With the
+  /// defaults (no resume), every field starts exactly as it did before R79.
   RecorderEngine(this.config,
-      {required int startNanos, this.rawSink})
+      {required int startNanos,
+      this.rawSink,
+      StoredPoint? resumeFrom,
+      double resumeDistanceM = 0})
       : _sessionStartNanos = startNanos,
-        _ticker = MonotonicTicker();
+        _ticker = MonotonicTicker() {
+    _anchor = resumeFrom;
+    _distanceM = resumeDistanceM;
+  }
 
   /// R40: rejected fixes must be mutually consistent across this many
   /// consecutive pairs (each d/dt <= v_max) before the anchor may move.

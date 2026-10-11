@@ -1,5 +1,9 @@
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/source/fix_source.dart';
 import 'package:track_scribe/source/geolocator_fix_source.dart';
 import 'package:track_scribe/source/synthetic_fix_source.dart';
@@ -7,6 +11,13 @@ import 'package:track_scribe/state/recording_controller.dart';
 import '../support/controlled_fix_source.dart';
 
 Future<void> _settle() => Future<void>.delayed(Duration.zero);
+
+// R80: recording sessions now touch sqlite (resume checkpoint + per-point
+// writes). Every test in this file overrides the database with an in-memory
+// one — `flutter test` must never reach getApplicationDocumentsDirectory().
+final _dbOverrides = <Override>[
+  appDatabaseProvider.overrideWithValue(AppDatabase(NativeDatabase.memory())),
+];
 
 void main() {
   // R21: the distance assertion lives here, in a pure-Dart run of the real
@@ -22,6 +33,7 @@ void main() {
         fixSourceProvider.overrideWithValue(
           SyntheticFixSource(everyMs: 50, speedMps: 3.5, accuracyM: 0.5),
         ),
+        ..._dbOverrides,
       ],
     );
     addTearDown(container.dispose);
@@ -68,7 +80,7 @@ void main() {
   test('ر7: the session stays in starting until two consecutive good fixes', () async {
     final src = ControlledFixSource();
     final container = ProviderContainer(
-      overrides: [fixSourceProvider.overrideWithValue(src)],
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
     );
     addTearDown(container.dispose);
     final controller = container.read(recordingProvider.notifier);
@@ -112,7 +124,7 @@ void main() {
     // user forever.
     final src = ControlledFixSource();
     final container = ProviderContainer(
-      overrides: [fixSourceProvider.overrideWithValue(src)],
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
     );
     addTearDown(container.dispose);
     final controller = container.read(recordingProvider.notifier);
@@ -133,7 +145,7 @@ void main() {
   test('the quality tier keeps reporting once ر7 has opened', () async {
     final src = ControlledFixSource();
     final container = ProviderContainer(
-      overrides: [fixSourceProvider.overrideWithValue(src)],
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
     );
     addTearDown(container.dispose);
     final controller = container.read(recordingProvider.notifier);
@@ -164,7 +176,7 @@ void main() {
     final src = ControlledFixSource()
       ..startFailure = const LocationPermissionDenied();
     final container = ProviderContainer(
-      overrides: [fixSourceProvider.overrideWithValue(src)],
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
     );
     addTearDown(container.dispose);
     final controller = container.read(recordingProvider.notifier);
@@ -185,7 +197,7 @@ void main() {
     // the error must still reach the engine and stop() must still work.
     final src = ControlledFixSource()..stepNanos = 2000000000; // 2 s cadence
     final container = ProviderContainer(
-      overrides: [fixSourceProvider.overrideWithValue(src)],
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
     );
     addTearDown(container.dispose);
     final controller = container.read(recordingProvider.notifier);

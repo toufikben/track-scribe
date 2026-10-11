@@ -1,5 +1,8 @@
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/source/gps_quality.dart';
 import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
@@ -51,6 +54,10 @@ void main() {
         overrides: [
           fixSourceProvider.overrideWithValue(src),
           gateClockProvider.overrideWithValue(() => nowNanos),
+          // R80: recording sessions now write to sqlite; memory DB only.
+          appDatabaseProvider.overrideWithValue(
+            AppDatabase(NativeDatabase.memory()),
+          ),
         ],
       ),
     );

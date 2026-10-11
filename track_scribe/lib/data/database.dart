@@ -32,7 +32,10 @@ class TrackPoints extends Table {
   RealColumn get lat => real()();
   RealColumn get lon => real()();
   RealColumn get altGnss => real().nullable()();
-  RealColumn get accuracyM => real()();
+  // R76: an UNMEASURED 1σ is NULL, never a number; the `unmeasuredAccuracyM`
+  // sentinel is mapped at the repository boundary. schemaVersion stays 1 —
+  // no released app exists, so editing the table is not a migration.
+  RealColumn get accuracyM => real().nullable()();
   RealColumn get speedMps => real().nullable()();
   RealColumn get bearingDeg => real().nullable()();
   TextColumn get waypointType => text()();
@@ -44,7 +47,9 @@ class TrackState extends Table {
   IntColumn get lastTimeNanos => integer()();
   RealColumn get lastLat => real()();
   RealColumn get lastLon => real()();
-  RealColumn get lastAccuracyM => real()();
+  // R76: NULL means the checkpoint's last stored fix had no measured 1σ
+  // (same sentinel rule and same no-migration note as TrackPoints.accuracyM).
+  RealColumn get lastAccuracyM => real().nullable()();
   TextColumn get lastType => text()();
   RealColumn get distanceM => real()();
   @override

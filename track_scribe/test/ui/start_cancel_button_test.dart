@@ -1,5 +1,8 @@
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/app.dart';
@@ -18,7 +21,15 @@ void main() {
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
     await tester.pumpWidget(
-      TrackScribeApp(overrides: [fixSourceProvider.overrideWithValue(src)]),
+      TrackScribeApp(
+        overrides: [
+          fixSourceProvider.overrideWithValue(src),
+          // R80: starting a session reads the resume checkpoint — memory DB.
+          appDatabaseProvider.overrideWithValue(
+            AppDatabase(NativeDatabase.memory()),
+          ),
+        ],
+      ),
     );
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -61,7 +72,15 @@ void main() {
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
     await tester.pumpWidget(
-      TrackScribeApp(overrides: [fixSourceProvider.overrideWithValue(src)]),
+      TrackScribeApp(
+        overrides: [
+          fixSourceProvider.overrideWithValue(src),
+          // R80: starting a session reads the resume checkpoint — memory DB.
+          appDatabaseProvider.overrideWithValue(
+            AppDatabase(NativeDatabase.memory()),
+          ),
+        ],
+      ),
     );
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('ابدأ التسجيل'));
