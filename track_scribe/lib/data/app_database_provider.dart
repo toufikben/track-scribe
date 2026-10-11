@@ -12,3 +12,10 @@ final appDatabaseProvider = Provider<AppDatabase>((_) => AppDatabase.open());
 final activityRepositoryProvider = Provider<ActivityRepository>(
   (ref) => ActivityRepository(ref.watch(appDatabaseProvider)),
 );
+
+/// R86: the durable "has this install ever been onboarded" flag. [AppGate]
+/// watches it to choose the first screen; production reads it from the real
+/// (file-backed) database, tests from an in-memory one they seed or leave empty.
+final onboardedProvider = FutureProvider<bool>(
+  (ref) => ref.watch(activityRepositoryProvider).flag(kOnboardedFlag),
+);
