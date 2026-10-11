@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/state/permission_providers.dart';
@@ -53,6 +56,9 @@ Future<void> _mount(
   required LocationPermission Function() permission,
   required bool service,
   required PermissionActions actions,
+  bool pendingProbes = false,
+  bool failWrites = false,
+  VoidCallback? onCompleted,
 }) async {
   final db = AppDatabase(NativeDatabase.memory());
   addTearDown(db.close);
@@ -60,14 +66,37 @@ Future<void> _mount(
     ProviderScope(
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
-        locationPermissionProvider.overrideWith((_) => Future.value(permission())),
+        if (failWrites)
+          activityRepositoryProvider.overrideWithValue(_FailingRepository(db)),
+        if (pendingProbes)
+          // A never-completing future, not a delayed one: no timer is left
+          // pending at teardown, and the row is genuinely still unknown.
+          locationPermissionProvider.overrideWith(
+            (_) => Completer<LocationPermission>().future,
+          )
+        else
+          locationPermissionProvider.overrideWith(
+            (_) => Future.value(permission()),
+          ),
         locationServiceProvider.overrideWith((_) => Future.value(service)),
         permissionActionsProvider.overrideWithValue(actions),
       ],
-      child: MaterialApp(theme: AppTheme.dark, home: const PermissionScreen()),
+      child: MaterialApp(
+        theme: AppTheme.dark,
+        home: PermissionScreen(onCompleted: onCompleted),
+      ),
     ),
   );
   await tester.pumpAndSettle();
+}
+
+class _FailingRepository extends ActivityRepository {
+  _FailingRepository(super.db);
+
+  @override
+  Future<void> setFlag(String key, bool value) async {
+    throw StateError('storage refuses the write');
+  }
 }
 
 LocationPermission _alwaysGranted() => LocationPermission.whileInUse;
@@ -115,6 +144,86 @@ void main() {
     expect(find.text(_off), findsNWidgets(2));
     expect(find.text(_granted), findsNothing);
     expect(find.text(_unverifiable), findsNWidgets(2));
+  });
+
+  testWidgets('an unknown permission probe reads as لا يمكن التحقق, never as off', (
+    tester,
+  ) async {
+    // "We have not asked yet / the platform cannot tell us" is not a
+    // negative. Row 1 must not print `غير مُفعّل` off an unknown, or the app
+    // states a fact it never measured.
+    tester.view.physicalSize = const Size(1178, 2556);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    for (final (label, probe, pending) in [
+      ('a probe that has not returned', LocationPermission.whileInUse, true),
+      (
+        'unableToDetermine',
+        LocationPermission.unableToDetermine,
+        false,
+      ),
+    ]) {
+      await _mount(
+        tester,
+        permission: () => probe,
+        service: true,
+        actions: _FakeActions().build(),
+        pendingProbes: pending,
+      );
+      expect(
+        find.text(_off),
+        findsNothing,
+        reason: '$label is not evidence of off',
+      );
+      expect(
+        find.text(_unverifiable),
+        findsNWidgets(3),
+        reason: 'rows 1, 3 and 4 at $label',
+      );
+      expect(
+        find.text(_granted),
+        findsOneWidget,
+        reason: 'row 2 (service on) at $label',
+      );
+      expect(
+        tester.widget<ElevatedButton>(
+          find.widgetWithText(ElevatedButton, _continue),
+        ).enabled,
+        isFalse,
+        reason: 'an unknown permission cannot unlock the app',
+      );
+    }
+  });
+
+  testWidgets('a refused flag write says so instead of doing nothing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1178, 4200);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    var completed = 0;
+    await _mount(
+      tester,
+      permission: _alwaysGranted,
+      service: true,
+      actions: _FakeActions().build(),
+      failWrites: true,
+      onCompleted: () => completed++,
+    );
+
+    await tester.tap(
+      find.widgetWithText(ElevatedButton, _continue),
+    );
+    await tester.pump();
+    expect(
+      find.text('تعذّر حفظ الإعدادات — أعد المحاولة.'),
+      findsOneWidget,
+      reason: 'the write failed out loud',
+    );
+    expect(completed, 0, reason: 'never route on an unpersisted flag');
+    // Let the snack bar's own timer expire so nothing is pending at teardown.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('the continue button is disabled with a visible reason while rows 1+2 '

@@ -31,8 +31,9 @@ class PermissionScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final serviceState = ref.watch(locationServiceProvider);
     final permission = ref.watch(locationPermissionProvider).value;
-    final serviceOn = ref.watch(locationServiceProvider).value ?? false;
+    final serviceOn = serviceState.value ?? false;
     final actions = ref.watch(permissionActionsProvider);
 
     final granted =
@@ -40,6 +41,15 @@ class PermissionScreen extends ConsumerWidget {
         permission == LocationPermission.always;
     final deniedForever = permission == LocationPermission.deniedForever;
     final canContinue = granted && serviceOn;
+
+    // "Still unknown" is not "off". A probe that has not returned, or
+    // that came back `unableToDetermine`, must say so — a definite negative
+    // would be the app pretending to know, and the row's action is the same
+    // either way, so the honest word costs nothing.
+    final permissionKnown =
+        permission != null && permission != LocationPermission.unableToDetermine;
+    String rowState(bool on, {bool known = true}) =>
+        on ? _granted : (known ? _off : _unverifiable);
 
     // A granted request re-reads the state so the row flips to `تم` without a
     // hot restart (the screen invalidates the probe after the dialog returns).
@@ -49,7 +59,28 @@ class PermissionScreen extends ConsumerWidget {
     }
 
     Future<void> completeOnboarding() async {
-      await ref.read(activityRepositoryProvider).setFlag(kOnboardedFlag, true);
+      // The flag write is the app's one durable promise to the user (R86); if
+      // storage refuses, say so and stay on the screen. A silent return would
+      // read as "the button is broken" — and the next launch would come back
+      // to this same gate.
+      try {
+        await ref
+            .read(activityRepositoryProvider)
+            .setFlag(kOnboardedFlag, true);
+      } catch (_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Palette.surface,
+            duration: const Duration(seconds: 4),
+            content: const Text(
+              'تعذّر حفظ الإعدادات — أعد المحاولة.',
+              style: TextStyle(color: Palette.text, fontWeight: FontWeight.bold),
+            ),
+          ),
+        );
+        return;
+      }
       ref.invalidate(onboardedProvider);
       onCompleted?.call();
     }
@@ -81,7 +112,7 @@ class PermissionScreen extends ConsumerWidget {
                 _row(
                   context: context,
                   title: 'إذن الموقع أثناء الاستخدام',
-                  stateWord: granted ? _granted : _off,
+                  stateWord: rowState(granted, known: permissionKnown),
                   stateColor: granted ? Palette.accent : Palette.textSecondary,
                   subtitle: 'يسمح للتطبيق بقراءة موقعك أثناء استخدامه.',
                   actionLabel: deniedForever ? 'فتح إعدادات التطبيق' : 'طلب الإذن',
@@ -95,7 +126,7 @@ class PermissionScreen extends ConsumerWidget {
                 _row(
                   context: context,
                   title: 'خدمة تحديد الموقع مفعّلة',
-                  stateWord: serviceOn ? _granted : _off,
+                  stateWord: rowState(serviceOn, known: serviceState.value != null),
                   stateColor: serviceOn ? Palette.accent : Palette.textSecondary,
                   subtitle: 'موقع الجهاز (GPS) يجب أن يكون مُشغَّلًا.',
                   actionLabel: 'فتح إعدادات الموقع',
