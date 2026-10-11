@@ -25,6 +25,12 @@ class Palette {
 
   static const Color onAccent = Color(0xFF101315);
 
+  /// The basemap grid line: `text` at ≈8 % alpha. The only decorative colour
+  /// in the UI, so it is a token here rather than a raw hex inside the painter
+  /// (the contrast law deliberately does not bind decoration — see
+  /// `RoutePainter._grid`, which is why this value is not in the contrast test).
+  static const Color gridOverlay = Color(0x14F4F7F2);
+
   /// Stop action ONLY. #E03131 fails 4.5:1 for white text, so danger is darkened.
   ///
   /// Usage rule (spec §5): `danger` is a **background** colour, and the only

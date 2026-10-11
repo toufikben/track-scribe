@@ -37,7 +37,11 @@ class RouteProjection {
     final sx = xDeg > 0 ? w / xDeg : double.infinity;
     final sy = dLat > 0 ? h / dLat : double.infinity;
     final fit = math.min(sx, sy);
-    return fit == double.infinity ? 1.0 : fit;
+    // Zero extent (one point, or a ر6 standing-still trail of identical
+    // positions) has no pixels-per-degree at all. 0 is the honest answer and
+    // `metresPerPixel` propagates it as "no scale"; a 1.0 sentinel would let
+    // the scale bar print a fabricated figure for a route that spans nothing.
+    return fit == double.infinity ? 0 : fit;
   }
 
   Offset of(StoredPoint p) => Offset(
@@ -47,8 +51,9 @@ class RouteProjection {
   );
 
   /// Metres per canvas pixel — uniform in both axes thanks to the
-  /// cos-correction (1° of latitude ≈ 111 320 m).
-  double get metresPerPixel => 111320 / scale;
+  /// cos-correction (1° of latitude ≈ 111 320 m). 0 means "this projection
+  /// spans nothing, so it has no scale to report".
+  double get metresPerPixel => scale <= 0 ? 0 : 111320 / scale;
 }
 
 /// Paints the stored trail on the generated basemap: the honest polyline in
@@ -140,7 +145,7 @@ class RoutePainter extends CustomPainter {
   void _grid(Canvas canvas, Size size) {
     // The grid is decoration, not text — the contrast law does not bind it.
     final grid = Paint()
-      ..color = const Color(0x14F4F7F2)
+      ..color = Palette.gridOverlay
       ..strokeWidth = 1;
     const step = 40.0;
     for (var x = 0.0; x <= size.width; x += step) {
@@ -153,5 +158,9 @@ class RoutePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant RoutePainter oldDelegate) =>
+      // List identity, not content: the controller hands over a freshly built
+      // snapshot per frame while a session runs, so any new instance means the
+      // trail may have grown and must repaint. A content compare would be an
+      // O(n) walk of a list that only grows; the paint itself is cheap.
       oldDelegate.points != points;
 }

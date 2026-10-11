@@ -1,9 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
-import 'package:track_scribe/state/locale_providers.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/route_painter.dart';
 
@@ -11,14 +9,13 @@ import 'package:track_scribe/ui/basemap/route_painter.dart';
 /// a north indicator and a scale bar, fully local with zero tile licences.
 /// The constructor contract (`points`) is what the recording screen consumes
 /// and must not change.
-class GridBasemap extends ConsumerWidget {
+class GridBasemap extends StatelessWidget {
   const GridBasemap({super.key, required this.points});
 
   final List<StoredPoint> points;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final sep = ref.watch(localeSepProvider);
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
@@ -51,7 +48,6 @@ class GridBasemap extends ConsumerWidget {
               child: _ScaleBar(
                 key: const Key('basemap-scale'),
                 metresPerPixel: painter.metresPerPixel(size),
-                sep: sep,
               ),
             ),
           ],
@@ -62,10 +58,9 @@ class GridBasemap extends ConsumerWidget {
 }
 
 class _ScaleBar extends StatelessWidget {
-  const _ScaleBar({super.key, required this.metresPerPixel, required this.sep});
+  const _ScaleBar({super.key, required this.metresPerPixel});
 
   final double metresPerPixel;
-  final String sep;
 
   @override
   Widget build(BuildContext context) {
@@ -73,15 +68,17 @@ class _ScaleBar extends StatelessWidget {
     // tell the truth.
     if (metresPerPixel <= 0) return const SizedBox.shrink();
     final labelMetres = _scaleLabelMetres(metresPerPixel);
+    // A label under one metre means the trail spans centimetres: a single
+    // point, or a ر6 standing-still trail of identical positions. Printing it
+    // at this precision renders "0,0 م" — a fabricated figure — so the bar
+    // hides instead.
+    if (labelMetres < 1) return const SizedBox.shrink();
     final barPx = labelMetres / metresPerPixel;
-    final text = labelMetres >= 1
-        ? labelMetres.toStringAsFixed(0)
-        : labelMetres.toStringAsFixed(1).replaceAll('.', sep);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          '$text م',
+          '${labelMetres.toStringAsFixed(0)} م',
           style: const TextStyle(fontSize: 10, color: Palette.textSecondary),
         ),
         const SizedBox(height: 2),

@@ -92,6 +92,101 @@ void main() {
     expect(painter.project(const Size(300, 300)).keys.single, _p1);
   });
 
+  test('a projection that spans nothing reports no scale', () {
+    // One point, and a ر6 standing-still trail whose points sit on one
+    // identical position: both have zero extent, so there is no
+    // pixels-per-degree to read and `metresPerPixel` must say 0 rather than
+    // invent a scale.
+    expect(RoutePainter(const [_p1]).metresPerPixel(const Size(300, 300)), 0);
+    expect(RoutePainter(const [_p1, _p1]).metresPerPixel(const Size(300, 300)), 0);
+  });
+
+  testWidgets('the scale bar hides a degenerate route instead of lying', (
+    tester,
+  ) async {
+    const tinyA = StoredPoint(
+      lat: 36.7538,
+      lon: 3.1856,
+      timeNanos: 0,
+      accuracyM: 4,
+      type: WaypointType.normal,
+    );
+    const tinyB = StoredPoint(
+      lat: 36.753800000001,
+      lon: 3.1856,
+      timeNanos: 1000000000,
+      accuracyM: 4,
+      type: WaypointType.normal,
+    );
+    final cases = {
+      'one point': const [_p1],
+      'standing-still trail': const [_p1, _p1],
+      'sub-metre extent': const [tinyA, tinyB],
+    };
+    for (final entry in cases.entries) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 300,
+            height: 300,
+            child: GridBasemap(points: entry.value),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull, reason: entry.key);
+      // The only Text inside the basemap is the scale label; a sub-metre 1-2-5
+      // label used to render as "0,0 م".
+      expect(
+        find.descendant(
+          of: find.byType(GridBasemap),
+          matching: find.byType(Text),
+        ),
+        findsNothing,
+        reason: '${entry.key} printed a fabricated scale label',
+      );
+    }
+  });
+
+  testWidgets('a real route keeps its honest scale label', (tester) async {
+    // Center, not the bare SizedBox: a route hands its child TIGHT 800×600
+    // constraints, and SizedBox cannot shrink past them — the canvas would
+    // silently be 800×600 while the assertion below reads 300×300.
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 300,
+            height: 300,
+            child: GridBasemap(points: [_p1, _p2]),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.getSize(find.byKey(const Key('basemap-canvas'))),
+      const Size(300, 300),
+    );
+    // 252 px across 0.002° of latitude → 0,88 m/px → the 1-2-5 rule picks 50 m.
+    expect(
+      RoutePainter(const [_p1, _p2]).metresPerPixel(const Size(300, 300)),
+      closeTo(0.883, 0.001),
+    );
+    final labels = tester
+        .widgetList<Text>(
+          find.descendant(
+            of: find.byType(GridBasemap),
+            matching: find.byType(Text),
+          ),
+        )
+        .map((t) => t.data)
+        .toList();
+    expect(
+      labels,
+      contains('50 م'),
+      reason: 'mpp=${RoutePainter(const [_p1, _p2]).metresPerPixel(const Size(300, 300))}',
+    );
+  });
+
   test('empty route projects nothing and never throws', () {
     final painter = RoutePainter(const []);
     expect(painter.hasPolyline, isFalse);
