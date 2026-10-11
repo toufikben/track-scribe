@@ -7,6 +7,7 @@ import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/sport_chips.dart';
 import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
+import 'package:track_scribe/ui/recording/widgets/storage_error_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/stop_button.dart';
 
 /// Layout B (spec §5): map on 40 % of the body height (flex 4), stat panel on
@@ -63,6 +64,9 @@ class RecordingScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      // R78: self-hides while storage is healthy, so a failing
+                      // write is the only time it takes space from the panel.
+                      const StorageErrorBanner(),
                       StatPanel(
                         distanceM: s.distanceM,
                         elapsedNanos: s.elapsedNanos,

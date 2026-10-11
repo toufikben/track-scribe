@@ -374,6 +374,16 @@ class RecordingController extends Notifier<RecordingState> {
       return;
     }
     final s = state;
+    // The banner is the user's signal; this is the developer's. A device
+    // session that persisted nothing produced zero logcat output, which made
+    // the failure indistinguishable from a healthy one while field-testing.
+    developer.log(
+      'storage write failed during the session, recording continues undurable: '
+      '$error',
+      name: 'track_scribe/storage',
+      error: error,
+      level: 1000, // package:logging SEVERE — a data-loss risk, not chatter
+    );
     state = RecordingState(
       sport: s.sport,
       phase: s.phase,
