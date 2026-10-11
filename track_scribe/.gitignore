@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Generated synthetic evidence fixtures: deterministic (seed 42), rebuilt with
+# `dart run tool/replay.dart --gen test/evidence/fixtures/synthetic/walk-1km.gpx`
+test/evidence/fixtures/synthetic/*.gpx
