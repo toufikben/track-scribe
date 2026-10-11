@@ -16,7 +16,12 @@ import 'package:track_scribe/theme/palette.dart';
 /// test` and never touches a platform channel; production leaves them on the real
 /// `Geolocator` statics.
 class PermissionScreen extends ConsumerWidget {
-  const PermissionScreen({super.key});
+  const PermissionScreen({super.key, this.onCompleted});
+
+  /// Invoked after onboarding is persisted; [AppGate] uses it to clear the
+  /// permission-denied flag and route back to the recorder. Null when the
+  /// screen is used standalone (tests).
+  final VoidCallback? onCompleted;
 
   static const _granted = 'تم';
   static const _off = 'غير مُفعّل';
@@ -46,6 +51,7 @@ class PermissionScreen extends ConsumerWidget {
     Future<void> completeOnboarding() async {
       await ref.read(activityRepositoryProvider).setFlag(kOnboardedFlag, true);
       ref.invalidate(onboardedProvider);
+      onCompleted?.call();
     }
 
     final theme = Theme.of(context);

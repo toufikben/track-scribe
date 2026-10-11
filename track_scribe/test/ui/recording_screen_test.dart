@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/app.dart';
@@ -10,10 +11,17 @@ import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 
 // R80: a session now reads the resume checkpoint and writes points to sqlite;
 // these tests drive the real app, so they pin the database to memory — never
-// getApplicationDocumentsDirectory().
-Widget _appWithMemoryDb() => ProviderScope(
+// getApplicationDocumentsDirectory(). R86: home is AppGate, so the DB must be
+// seeded with the onboarded flag or the app boots into PermissionScreen.
+Future<AppDatabase> _seededDb() async {
+  final db = AppDatabase(NativeDatabase.memory());
+  await ActivityRepository(db).setFlag(kOnboardedFlag, true);
+  return db;
+}
+
+Widget _appWithDb(AppDatabase db) => ProviderScope(
   overrides: [
-    appDatabaseProvider.overrideWithValue(AppDatabase(NativeDatabase.memory())),
+    appDatabaseProvider.overrideWithValue(db),
   ],
   child: const TrackScribeApp(),
 );
@@ -26,7 +34,9 @@ void main() {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_appWithMemoryDb());
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(_appWithDb(db));
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(
@@ -110,7 +120,9 @@ void main() {
   testWidgets(
     'start is enabled, and Task 9a keeps it enabled through `starting` as a cancel',
     (tester) async {
-      await tester.pumpWidget(_appWithMemoryDb());
+      final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(_appWithDb(db));
       await tester.pump(const Duration(milliseconds: 400));
       final f = find.widgetWithText(ElevatedButton, 'ابدأ التسجيل');
       expect(
@@ -130,7 +142,9 @@ void main() {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_appWithMemoryDb());
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(_appWithDb(db));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('ابدأ التسجيل'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -148,7 +162,9 @@ void main() {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(_appWithMemoryDb());
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(_appWithDb(db));
     await tester.pump(const Duration(milliseconds: 400));
 
     await tester.tap(find.text('ابدأ التسجيل'));

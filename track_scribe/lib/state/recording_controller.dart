@@ -8,6 +8,8 @@ import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/engine/recorder_engine.dart';
 import 'package:track_scribe/engine/sport_config.dart';
+import 'package:track_scribe/source/geolocator_fix_source.dart'
+    show LocationPermissionDenied;
 import 'package:track_scribe/source/gps_quality.dart';
 import 'package:track_scribe/source/fix_source.dart';
 import 'package:track_scribe/source/synthetic_fix_source.dart';
@@ -22,6 +24,7 @@ class RecordingState {
     this.fixCount = 0,
     this.quality = GpsQuality.none,
     this.storageError,
+    this.permissionDenied = false,
   });
 
   final Sport sport;
@@ -38,11 +41,18 @@ class RecordingState {
   /// but the UI must stop claiming durability while this is non-null.
   final String? storageError;
 
+  /// Spec §7 / R86: true only when the most recent start attempt was refused by
+  /// a denied location permission. [AppGate] routes on it so a revoked
+  /// permission shows the instructions screen, never a dead button. A
+  /// successful start or a stop clears it.
+  final bool permissionDenied;
+
   RecordingState copyWith({
     Sport? sport,
     RecordingPhase? phase,
     RecorderEngine? engine,
     GpsQuality? quality,
+    bool? permissionDenied,
   }) => RecordingState(
     sport: sport ?? this.sport,
     phase: phase ?? this.phase,
@@ -52,6 +62,7 @@ class RecordingState {
     elapsedNanos: elapsedNanos,
     fixCount: fixCount,
     storageError: storageError,
+    permissionDenied: permissionDenied ?? this.permissionDenied,
   );
 }
 
@@ -116,27 +127,48 @@ class RecordingController extends Notifier<RecordingState> {
     state = state.copyWith(sport: s);
   }
 
+  /// R86: called by [AppGate] when the user completes the permission screen,
+  /// so the gate hands them back to the recorder instead of routing on a
+  /// stale denial.
+  void acknowledgePermission() {
+    state = state.copyWith(permissionDenied: false);
+  }
+
   Future<void> start() async {
     if (state.phase != RecordingPhase.stopped) return;
     _gate = FixQualityGate(nowNanos: ref.read(gateClockProvider));
     state = state.copyWith(
       phase: RecordingPhase.starting,
       quality: GpsQuality.none,
+      permissionDenied: false,
     );
     final src = ref.read(fixSourceProvider);
     try {
       await src.start();
-    } on Object {
-      // A source that refuses to start (a denied location permission in
-      // production, or a test double) must not strand the UI in `starting`:
-      // back to a stopped, fully usable button. Task 9c's onboarding turns
-      // this into the user-facing permission request.
+    } on LocationPermissionDenied {
+      // Spec §7 / R86: a denied permission is NOT a generic start failure — it
+      // is the case the instructions screen exists for. `AppGate` reads this
+      // flag and shows it instead of a silently dead button.
       _release();
       await _stopSourceQuietly(src);
       state = RecordingState(
         sport: state.sport,
         phase: RecordingPhase.stopped,
         engine: null,
+        permissionDenied: true,
+      );
+      return;
+    } on Object {
+      // Any other source that refuses to start (a test double, a dead sensor)
+      // must not strand the UI in `starting`: back to a stopped, fully usable
+      // button, with no permission claim.
+      _release();
+      await _stopSourceQuietly(src);
+      state = RecordingState(
+        sport: state.sport,
+        phase: RecordingPhase.stopped,
+        engine: null,
+        permissionDenied: false,
       );
       return;
     }

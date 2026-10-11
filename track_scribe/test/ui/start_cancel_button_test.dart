@@ -2,11 +2,20 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/app.dart';
 import '../support/controlled_fix_source.dart';
+
+/// R86: home is AppGate, so the DB must be seeded with the onboarded flag or
+/// the app lands on PermissionScreen instead of the recording screen.
+Future<AppDatabase> _seededDb() async {
+  final db = AppDatabase(NativeDatabase.memory());
+  await ActivityRepository(db).setFlag(kOnboardedFlag, true);
+  return db;
+}
 
 /// Task 7 left `starting` as a transient with a disabled button, which was safe
 /// only because the synthetic source always has a good fix. With real GNSS a
@@ -20,14 +29,14 @@ void main() {
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
+    final db = await _seededDb();
+    addTearDown(db.close);
     await tester.pumpWidget(
       TrackScribeApp(
         overrides: [
           fixSourceProvider.overrideWithValue(src),
           // R80: starting a session reads the resume checkpoint — memory DB.
-          appDatabaseProvider.overrideWithValue(
-            AppDatabase(NativeDatabase.memory()),
-          ),
+          appDatabaseProvider.overrideWithValue(db),
         ],
       ),
     );
@@ -71,14 +80,14 @@ void main() {
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
+    final db = await _seededDb();
+    addTearDown(db.close);
     await tester.pumpWidget(
       TrackScribeApp(
         overrides: [
           fixSourceProvider.overrideWithValue(src),
           // R80: starting a session reads the resume checkpoint — memory DB.
-          appDatabaseProvider.overrideWithValue(
-            AppDatabase(NativeDatabase.memory()),
-          ),
+          appDatabaseProvider.overrideWithValue(db),
         ],
       ),
     );

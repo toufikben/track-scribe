@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/source/gps_quality.dart';
 import 'package:track_scribe/state/recording_controller.dart';
@@ -9,6 +10,14 @@ import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/app.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import '../support/controlled_fix_source.dart';
+
+/// R86: home is AppGate, so the DB must be seeded with the onboarded flag or
+/// the app lands on PermissionScreen instead of the recording screen.
+Future<AppDatabase> _seededDb() async {
+  final db = AppDatabase(NativeDatabase.memory());
+  await ActivityRepository(db).setFlag(kOnboardedFlag, true);
+  return db;
+}
 
 /// The banner was built in Task 7 to wait for this: it renders the ر7/ر8 state
 /// machine, and ر8's `lost` must be reachable on the desktop — the clock is
@@ -49,15 +58,15 @@ void main() {
 
     final src = ControlledFixSource();
     var nowNanos = 0;
+    final db = await _seededDb();
+    addTearDown(db.close);
     await tester.pumpWidget(
       TrackScribeApp(
         overrides: [
           fixSourceProvider.overrideWithValue(src),
           gateClockProvider.overrideWithValue(() => nowNanos),
           // R80: recording sessions now write to sqlite; memory DB only.
-          appDatabaseProvider.overrideWithValue(
-            AppDatabase(NativeDatabase.memory()),
-          ),
+          appDatabaseProvider.overrideWithValue(db),
         ],
       ),
     );

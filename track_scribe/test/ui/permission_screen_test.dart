@@ -70,7 +70,7 @@ Future<void> _mount(
   await tester.pumpAndSettle();
 }
 
-final _alwaysGranted = () => LocationPermission.whileInUse;
+LocationPermission _alwaysGranted() => LocationPermission.whileInUse;
 
 void main() {
   testWidgets('the four R85 rows render, in order, with the granted/service states', (

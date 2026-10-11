@@ -185,9 +185,34 @@ void main() {
     expect(
       container.read(recordingProvider).phase,
       RecordingPhase.stopped,
-      reason: 'the permission screen (Task 9b) owns this case; the recorder '
+      reason: 'the permission screen (Task 9c) owns this case; the recorder '
           'must leave the user a working button, not a spinner',
     );
+    expect(
+      container.read(recordingProvider).permissionDenied,
+      isTrue,
+      reason: 'R86: a denied permission is distinguished from a generic start '
+          'failure so AppGate can route to the instructions screen',
+    );
+    await src.dispose();
+  });
+
+  test('a generic start failure returns to stopped without a permission claim',
+      () async {
+    // The other half of the R86 split: only LocationPermissionDenied sets
+    // permissionDenied; any other throw must leave it false so a dead sensor
+    // never masquerades as a permission problem.
+    final src = ControlledFixSource()..startFailure = StateError('sensor dead');
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    final s = container.read(recordingProvider);
+    expect(s.phase, RecordingPhase.stopped);
+    expect(s.permissionDenied, isFalse);
     await src.dispose();
   });
 

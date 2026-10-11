@@ -1,10 +1,22 @@
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/activity_repository.dart';
+import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/ui/app.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/sport_chips.dart';
+
+/// R86: home is AppGate, so a widget test must seed the onboarded flag or the
+/// app lands on PermissionScreen (platform-channel probes) instead of the map.
+Future<AppDatabase> _seededDb() async {
+  final db = AppDatabase(NativeDatabase.memory());
+  await ActivityRepository(db).setFlag(kOnboardedFlag, true);
+  return db;
+}
 
 /// The map carries two floating overlays, and both of their Arabic labels are
 /// fixed strings. Measured at a real phone width they are far too wide to share
@@ -16,7 +28,14 @@ void main() {
       tester.view.physicalSize = Size(widthDp * 2.75, 2340);
       tester.view.devicePixelRatio = 2.75;
       addTearDown(tester.view.reset);
-      await tester.pumpWidget(const ProviderScope(child: TrackScribeApp()));
+      final db = await _seededDb();
+      addTearDown(db.close);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [appDatabaseProvider.overrideWithValue(db)],
+          child: const TrackScribeApp(),
+        ),
+      );
       await tester.pump(const Duration(milliseconds: 400));
 
       expect(tester.takeException(), isNull, reason: 'renders at ${widthDp}dp');

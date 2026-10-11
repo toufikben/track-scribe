@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 // secondary entry point, not in the main one.
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:track_scribe/theme/theme.dart';
-import 'package:track_scribe/ui/recording/recording_screen.dart';
+import 'package:track_scribe/ui/app_gate.dart';
 
 /// The app root.
 ///
@@ -28,7 +28,7 @@ class TrackScribeApp extends StatelessWidget {
     child: MaterialApp(
       title: 'Track Scribe',
       theme: AppTheme.dark,
-      home: const RecordingScreen(),
+      home: const AppGate(),
     ),
   );
 }

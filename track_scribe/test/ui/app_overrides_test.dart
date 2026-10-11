@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
+import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/ui/app.dart';
@@ -11,10 +12,15 @@ import '../support/controlled_fix_source.dart';
 // R80: starting a session now reads the resume checkpoint from sqlite, so even
 // the "no fix source" test must declare a database — in memory only. This adds
 // the DATABASE override without touching the test's premise that no fix source
-// is overridden.
-final _dbOverride = appDatabaseProvider.overrideWithValue(
-  AppDatabase(NativeDatabase.memory()),
-);
+// is overridden. R86: the DB is seeded with the onboarded flag, because `home`
+// is now AppGate and an unseeded install would land on PermissionScreen (whose
+// probes need a platform channel a widget test does not have) instead of the
+// recording screen this file's claims are about.
+Future<AppDatabase> _seededDb() async {
+  final db = AppDatabase(NativeDatabase.memory());
+  await ActivityRepository(db).setFlag(kOnboardedFlag, true);
+  return db;
+}
 
 /// R72 was written as: "`main()` wrapping the app in its own `ProviderScope`
 /// starts a second container, so the production override would be invisible and
@@ -33,8 +39,13 @@ void main() {
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
+    final db = await _seededDb();
+    addTearDown(db.close);
     await tester.pumpWidget(
-      TrackScribeApp(overrides: [fixSourceProvider.overrideWithValue(src), _dbOverride]),
+      TrackScribeApp(overrides: [
+        fixSourceProvider.overrideWithValue(src),
+        appDatabaseProvider.overrideWithValue(db),
+      ]),
     );
     await tester.pump(const Duration(milliseconds: 400));
 
@@ -74,7 +85,11 @@ void main() {
     // a unit test has no platform), not part of the claim. The claim is about
     // the FIX SOURCE: none is provided, so the app must fall back to
     // SyntheticFixSource and this controlled source stays untouched.
-    await tester.pumpWidget(TrackScribeApp(overrides: [_dbOverride]));
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(
+      TrackScribeApp(overrides: [appDatabaseProvider.overrideWithValue(db)]),
+    );
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('ابدأ التسجيل'));
     await tester.pump();
@@ -97,9 +112,14 @@ void main() {
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
     final src = ControlledFixSource();
+    final db = await _seededDb();
+    addTearDown(db.close);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [fixSourceProvider.overrideWithValue(src), _dbOverride],
+        overrides: [
+          fixSourceProvider.overrideWithValue(src),
+          appDatabaseProvider.overrideWithValue(db),
+        ],
         child: const TrackScribeApp(),
       ),
     );
