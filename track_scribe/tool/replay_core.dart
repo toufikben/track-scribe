@@ -53,27 +53,26 @@ double engineDistanceFromGpx(
   return engine.distanceMeters;
 }
 
-/// A deterministic synthetic line fixture (ruling R92): fixed-seed random
-/// walk bounded at ±jitterM with per-step increments of jitterM/40, so the
-/// noise keeps its ±10 m amplitude while no fix implies an impossible speed.
-/// Ground truth is exact by construction — synthetic fixtures calibrate the
-/// harness, they are never cited as device evidence.
+/// A deterministic synthetic line fixture (ruling R98): fixed-seed
+/// **independent** scatter across ±jitterM — what a receiver's 1σ error looks
+/// like between consecutive seconds at 1 Hz. It replaces the smooth random
+/// walk of R92, which was so gentle that a gate-free odometer scored better on
+/// it than the engine does, i.e. the fixture could no longer catch the rules it
+/// claims to test. Ground truth is exact by construction; synthetic fixtures
+/// calibrate the harness and are never cited as device evidence.
 List<Wpt> syntheticTrackPoints({
   required double metres,
   required double speedMps,
   required double jitterM,
   int seed = 42,
 }) {
-  final per = 1.0; // 1 Hz
+  const per = 1.0; // 1 Hz
   final steps = (metres / (speedMps * per)).ceil();
-  final rng = _SeededRng(seed);
-  var noise = 0.0;
+  final rng = SeededRng(seed);
   final base = DateTime.utc(2026, 1, 1);
   final out = <Wpt>[];
   for (var i = 0; i <= steps; i++) {
-    noise = (noise + (rng.next() * 2 - 1) * (jitterM / 40))
-        .clamp(-jitterM, jitterM)
-        .toDouble();
+    final noise = (rng.next() * 2 - 1) * jitterM;
     out.add(
       Wpt(
         lat: 36.7538 + (i * speedMps * per + noise) / 111111.0,
@@ -86,9 +85,11 @@ List<Wpt> syntheticTrackPoints({
   return out;
 }
 
-/// Minimal deterministic LCG — enough for the fixture, no external package.
-class _SeededRng {
-  _SeededRng(this._state);
+/// Minimal deterministic LCG — enough for the fixtures, no external package.
+/// Shared with `test/evidence/synthetic_injection_test.dart` so the harness
+/// and the suite draw the same numbers from the same seed.
+class SeededRng {
+  SeededRng(this._state);
   int _state;
   double next() {
     _state = (_state * 1103515245 + 12345) & 0x7fffffff;
