@@ -58,6 +58,7 @@ Future<void> _mount(
   required PermissionActions actions,
   bool pendingProbes = false,
   bool failWrites = false,
+  bool notifications = false,
   VoidCallback? onCompleted,
 }) async {
   final db = AppDatabase(NativeDatabase.memory());
@@ -80,6 +81,14 @@ Future<void> _mount(
           ),
         locationServiceProvider.overrideWith((_) => Future.value(service)),
         permissionActionsProvider.overrideWithValue(actions),
+        // The fifth row is covered by its own file; here it is pinned to one
+        // known answer so the four-row state counts stay honest.
+        notificationActionsProvider.overrideWithValue(
+          NotificationActions(
+            isGranted: () async => notifications,
+            request: () async => notifications,
+          ),
+        ),
       ],
       child: MaterialApp(
         theme: AppTheme.dark,
@@ -124,7 +133,11 @@ void main() {
     // state (the project forbids pretending to know).
     expect(find.text(_granted), findsNWidgets(2), reason: 'rows 1 and 2');
     expect(find.text(_unverifiable), findsNWidgets(2), reason: 'rows 3 and 4');
-    expect(find.text(_off), findsNothing);
+    expect(
+      find.text(_off),
+      findsNWidgets(1),
+      reason: 'row 5 only — its probe is the notification grant, pinned off here',
+    );
   });
 
   testWidgets('denied permission reads as off and denied-forever as off too', (
@@ -140,8 +153,8 @@ void main() {
       actions: _FakeActions().build(),
     );
 
-    // Row 1 off, row 2 off; the two advisory rows still `لا يمكن التحقق`.
-    expect(find.text(_off), findsNWidgets(2));
+    // Row 1 off, row 2 off, row 5 off; the two advisory rows still `لا يمكن التحقق`.
+    expect(find.text(_off), findsNWidgets(3));
     expect(find.text(_granted), findsNothing);
     expect(find.text(_unverifiable), findsNWidgets(2));
   });
@@ -172,8 +185,10 @@ void main() {
       );
       expect(
         find.text(_off),
-        findsNothing,
-        reason: '$label is not evidence of off',
+        findsNWidgets(1),
+        reason:
+            'row 5 (the pinned-off notification grant) is the only `off` — '
+            '$label is not evidence of off',
       );
       expect(
         find.text(_unverifiable),
@@ -305,8 +320,9 @@ void main() {
     );
 
     expect(find.text(_t1), findsOneWidget);
-    // Row 1 starts off, and only row 2 is granted (service on).
-    expect(find.text(_off), findsOneWidget);
+    // Row 1 starts off and row 5 (notifications) is pinned off; only row 2 is
+    // granted (service on).
+    expect(find.text(_off), findsNWidgets(2), reason: 'rows 1 and 5');
     expect(find.text(_granted), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('perm-action-1')));
@@ -315,9 +331,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(actions.requestCalls, 1);
-    // Now BOTH rows 1 and 2 read granted -> two `تم`, no `غير مُفعّل`.
+    // Now rows 1 and 2 both read granted; row 5 stays off because row 5 has
+    // its own action and is never touched by granting location permission.
     expect(find.text(_granted), findsNWidgets(2));
-    expect(find.text(_off), findsNothing);
+    expect(find.text(_off), findsOneWidget);
   });
 
   testWidgets('each row action calls its injected function exactly once', (

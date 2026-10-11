@@ -33,6 +33,7 @@ class PermissionScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final serviceState = ref.watch(locationServiceProvider);
     final permission = ref.watch(locationPermissionProvider).value;
+    final notifications = ref.watch(notificationPermissionProvider).value;
     final serviceOn = serviceState.value ?? false;
     final actions = ref.watch(permissionActionsProvider);
 
@@ -56,6 +57,13 @@ class PermissionScreen extends ConsumerWidget {
     Future<void> requestAndReread() async {
       await actions.request();
       ref.invalidate(locationPermissionProvider);
+    }
+
+    // Same shape as the location row: ask, then re-read the grant rather than
+    // trusting the dialog's answer.
+    Future<void> requestNotificationsAndReread() async {
+      await ref.read(notificationActionsProvider).request();
+      ref.invalidate(notificationPermissionProvider);
     }
 
     Future<void> completeOnboarding() async {
@@ -154,6 +162,27 @@ class PermissionScreen extends ConsumerWidget {
                   actionLabel: 'فتح إعدادات التطبيق',
                   actionKey: 'perm-action-4',
                   onAction: actions.openAppSettings,
+                ),
+                _row(
+                  context: context,
+                  title: 'إشعار التسجيل',
+                  stateWord: rowState(
+                    notifications ?? false,
+                    known: notifications != null,
+                  ),
+                  stateColor: notifications == true
+                      ? Palette.accent
+                      : Palette.textSecondary,
+                  // Measured on the device: with the grant denied, a screen-off
+                  // session kept storing points every ~15 s. So this row can
+                  // tell the truth — the notification is the user's sign, not
+                  // the recorder's lifeline — and still not gate المتابعة.
+                  subtitle:
+                      'بدونه لا يظهر إشعار خارج التطبيق أثناء التسجيل. التسجيل '
+                      'نفسه يستمر دونه، لكنّك لن ترى أنه يعمل.',
+                  actionLabel: 'طلب الإذن',
+                  actionKey: 'perm-action-5',
+                  onAction: requestNotificationsAndReread,
                 ),
                 const SizedBox(height: 4),
                 if (!canContinue)
