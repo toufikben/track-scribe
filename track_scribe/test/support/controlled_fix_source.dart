@@ -65,6 +65,12 @@ class ControlledFixSource implements FixSource {
     }
   }
 
+  /// Injects a stream error, the way a dying platform GNSS provider does: the
+  /// consumer must survive it (`cancelOnError: false`) without ending the feed.
+  void addError(Object error, [StackTrace? stackTrace]) {
+    _out.addError(error, stackTrace ?? StackTrace.current);
+  }
+
   /// Lets a widget test hand control back to the fake-async clock: `pump` can
   /// only drive timers, so fixes that must arrive "later" go through a Timer.
   void emitLater({double accuracyM = 3.0}) {

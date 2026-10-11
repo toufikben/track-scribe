@@ -65,9 +65,10 @@ void main() {
 
     await tester.tap(find.text('ابدأ التسجيل'));
     await tester.pump(const Duration(seconds: 2));
-    // R21: Stopwatch is NOT faked by pump (only Timer.periodic is), so after
-    // a fake 2 s we assert ONLY the phase change — never a specific non-zero
-    // distance.
+    // R21 + Task 9a: pump drives the synthetic source's Timer.periodic (but
+    // NOT its Stopwatch), so the fake 2 s delivers enough ≤ 35 m fixes to
+    // cross the ر7 gate and reach `recording` — asserted only as the button
+    // change, never as a specific non-zero distance.
     expect(find.text('إيقاف'), findsOneWidget);
 
     // R53: while recording, the stop button is danger-as-background carrying
@@ -94,7 +95,7 @@ void main() {
   });
 
   testWidgets(
-    'start is enabled with the synthetic source (ر7 deferred to Task 9)',
+    'start is enabled, and Task 9a keeps it enabled through `starting` as a cancel',
     (tester) async {
       await tester.pumpWidget(const ProviderScope(child: TrackScribeApp()));
       await tester.pump(const Duration(milliseconds: 400));
@@ -102,7 +103,8 @@ void main() {
       expect(
         tester.widget<ElevatedButton>(f).enabled,
         isTrue,
-        reason: 'the synthetic source always has a fix; the disabled state is covered in Task 9',
+        reason: 'the ر7 gate (Task 9a) ships as an honest `starting` phase with '
+            'a cancel button — there is deliberately no disabled start state',
       );
     },
   );

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:geolocator/geolocator.dart' as gl;
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/source/fix_source.dart';
+import 'package:track_scribe/source/gps_quality.dart';
 
 export 'package:track_scribe/source/gps_quality.dart';
 
@@ -132,12 +133,15 @@ class GeolocatorFixSource implements FixSource {
   /// could not measure and the model substitutes `0.0` for it. A `speed` of
   /// 0.0 that was never measured would tell ر6 the user is standing still and
   /// freeze the distance, so unavailable measurements are mapped to null and
-  /// the engine falls back to the values it can derive.
+  /// the engine falls back to the values it can derive. `accuracyM` is the one
+  /// field the engine cannot fall back on (ر7 reads it directly), so an
+  /// unmeasured accuracy maps to [unmeasuredAccuracyM] instead of the
+  /// convincing `0.0` the plugin substitutes (Ruling R74).
   RawFix _toRawFix(gl.Position p) => RawFix(
     lat: p.latitude,
     lon: p.longitude,
     timeNanos: _clock.elapsedMicroseconds * 1000,
-    accuracyM: p.accuracy,
+    accuracyM: p.hasAccuracy ? p.accuracy : unmeasuredAccuracyM,
     altitudeM: p.hasAltitude ? p.altitude : null,
     speedMps: p.hasSpeed ? p.speed : null,
     bearingDeg: p.hasHeading ? p.heading : null,

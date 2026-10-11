@@ -35,6 +35,20 @@ bool isFixGoodEnough(RawFix fix) =>
 /// ر8's window: this long without any fix and the signal counts as lost.
 const Duration gpsLostAfter = Duration(seconds: 20);
 
+/// The accuracy a source must map an UNMEASURED 1σ to (ruling R74).
+///
+/// When Android reports `Location.hasAccuracy() == false` the plugin model
+/// substitutes `accuracy == 0.0` — a phantom "perfect fix" that would open
+/// ر7 against a signal whose quality was never measured. Infinity is the
+/// worst-case-strict sentinel and keeps every consumer safe by construction:
+/// `isFixGoodEnough(inf)` is false (never promotes the gate),
+/// `GpsQualityX.fromAccuracy(inf)` renders `searching` (inf > 35), and
+/// `SportConfig.gateFor(inf)` clamps to `maxStoreDistanceM` — maximum
+/// caution, never permissiveness. `TrackPoints.accuracyM` is a non-null REAL
+/// column, so a heartbeat-forced store of such a fix persists this sentinel;
+/// whether to keep or filter it is Task 9b's decision, not this round's.
+const double unmeasuredAccuracyM = double.infinity;
+
 /// The "no recording until the signal is good enough" rule, as data.
 ///
 /// [ready] (ر7) becomes true on the first pair of *consecutive* fixes at

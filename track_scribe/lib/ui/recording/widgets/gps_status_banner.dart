@@ -5,6 +5,9 @@ import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
 
 /// The ر7/ر8 label table, as data (spec §5 wording).
+/// `none` and `searching` share one string ON PURPOSE (M4 ruling): both tell
+/// the user "no usable signal yet", and pinning that in gps_banner_test.dart
+/// keeps the collapse a decision, not an oversight.
 String gpsStatusLabel(GpsQuality q) => switch (q) {
   GpsQuality.none || GpsQuality.searching => 'جارٍ البحث عن الإشارة…',
   GpsQuality.ok => 'تسجيل نشِط',

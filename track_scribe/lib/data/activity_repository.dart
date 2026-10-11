@@ -40,6 +40,9 @@ class ActivityRepository {
   /// Rule ر13: one `batch()` = one immediate transaction. The returned
   /// future only completes after that transaction has committed, so every
   /// appended point is durable before the caller proceeds to the next one.
+  /// Note: `accuracyM` is a non-null REAL column, so a heartbeat-forced store
+  /// of an unmeasured-accuracy fix persists the `unmeasuredAccuracyM` sentinel;
+  /// what to do with it on read/export is Task 9b's decision.
   Future<void> appendPoints(int activityId, List<StoredPoint> points) {
     return _db.batch((batch) {
       for (final p in points) {

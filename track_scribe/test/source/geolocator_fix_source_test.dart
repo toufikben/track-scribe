@@ -251,4 +251,161 @@ void main() {
     await first.close();
     await second.close();
   });
+
+  // R74: an UNMEASURED accuracy must never read as a perfect fix. Android's
+  // `Location.hasAccuracy() == false` makes the plugin model substitute
+  // `accuracy == 0.0`; mapping that through would open ر7 against a phantom
+  // anchor — the exact failure ر7 exists to prevent.
+
+  test('R74: a hasAccuracy == false fix maps to unmeasuredAccuracyM, never 0.0', () async {
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    ctl.add(pos(hasAccuracy: false, accuracy: 0.0));
+    await _settle();
+
+    expect(got.single.accuracyM, unmeasuredAccuracyM);
+    expect(
+      got.single.accuracyM,
+      isNot(0.0),
+      reason: '0.0 claims a perfect 1σ the platform never measured',
+    );
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('R74: two consecutive unmeasured-accuracy fixes never open ر7 and read as searching', () async {
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    // Injected monotonic counter, never the wall clock (project rule).
+    final gate = FixQualityGate(nowNanos: () => 0);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    ctl.add(pos(hasAccuracy: false, accuracy: 0.0));
+    await _settle();
+    ctl.add(pos(hasAccuracy: false, accuracy: 0.0));
+    await _settle();
+    expect(got, hasLength(2));
+    for (final fix in got) {
+      gate.add(fix);
+    }
+
+    expect(
+      gate.ready,
+      isFalse,
+      reason: 'two unmeasured fixes are not two good fixes; ر7 must stay shut',
+    );
+    expect(gate.quality, GpsQuality.searching);
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('R74: an unmeasured fix breaks the consecutive-good streak, it does not count toward it', () async {
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    // Two gates, one per scenario: ر7 counts CONSECUTIVE fixes, so a shared
+    // gate would carry the first scenario's streak into the second.
+    final afterUnmeasured = FixQualityGate(nowNanos: () => 0);
+    final midStreak = FixQualityGate(nowNanos: () => 0);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    // Scenario A — unmeasured, then one real 12 m fix: ر7 needs TWO
+    // consecutive good fixes, so the good fix after the sentinel restarts the
+    // streak at 1 and the gate stays shut.
+    ctl.add(pos(hasAccuracy: false, accuracy: 0.0));
+    await _settle();
+    ctl.add(pos(accuracy: 12.0));
+    await _settle();
+    ctl.add(pos(accuracy: 12.0));
+    await _settle();
+    expect(afterUnmeasured.add(got[0]), isFalse);
+    expect(afterUnmeasured.add(got[1]), isFalse,
+        reason: 'the good fix restarts the streak at 1');
+    expect(afterUnmeasured.add(got[2]), isTrue,
+        reason: 'only the second consecutive good fix opens ر7');
+
+    // Scenario B — good, sentinel, good: the sentinel must break the streak
+    // exactly like a > 35 m fix does.
+    ctl.add(pos(accuracy: 12.0));
+    await _settle();
+    ctl.add(pos(hasAccuracy: false, accuracy: 0.0));
+    await _settle();
+    ctl.add(pos(accuracy: 12.0));
+    await _settle();
+    expect(midStreak.add(got[3]), isFalse); // one good fix
+    expect(midStreak.add(got[4]), isFalse); // sentinel breaks the streak
+    expect(midStreak.add(got[5]), isFalse,
+        reason: 'good(1) → sentinel(0) → good(1): never two consecutive');
+
+    await src.stop();
+    await ctl.close();
+  });
+
+  test('a platform stream error is forwarded to listeners and keeps the fix feed alive', () async {
+    // onError: out.addError + cancelOnError: false (geolocator_fix_source
+    // .dart) is the whole error contract: the controller cannot tell the user
+    // about a signal gap it never learns about, and one error must not end a
+    // recording by silently unsubscribing.
+    final ctl = StreamController<gl.Position>();
+    final src = source((_) => ctl.stream);
+    final got = <RawFix>[];
+    final errors = <Object>[];
+    final sub = src.fixes.listen(
+      got.add,
+      onError: (Object e) => errors.add(e),
+      cancelOnError: false,
+    );
+
+    await src.start();
+    ctl.addError(Exception('GNSS provider died'));
+    await _settle();
+    expect(errors, hasLength(1), reason: 'the error must actually arrive');
+
+    ctl.add(pos());
+    await _settle();
+    expect(got, hasLength(1),
+        reason: 'a later fix must still flow — the subscription survived the error');
+
+    await src.stop();
+    await sub.cancel();
+    await ctl.close();
+  });
+
+  test('M5: start() twice without stop() leaves exactly one live subscription', () async {
+    // The double-start guard: a second start() must cancel the first plugin
+    // subscription before taking a new one, or two sensors feed one controller
+    // and every fix arrives doubled.
+    final first = StreamController<gl.Position>();
+    final second = StreamController<gl.Position>();
+    final pluginStreams = [first.stream, second.stream];
+    var calls = 0;
+    final src = source((_) => pluginStreams[calls++]);
+    final got = <RawFix>[];
+    src.fixes.listen(got.add);
+
+    await src.start();
+    await src.start(); // no stop() in between
+    expect(calls, 2, reason: 'the guard is not a refusal: the plugin is asked again');
+
+    first.add(pos());
+    await _settle();
+    expect(got, isEmpty, reason: 'the first subscription was cancelled by the second start()');
+
+    second.add(pos());
+    await _settle();
+    expect(got, hasLength(1), reason: 'fixes must not be doubled by a stale live subscription');
+
+    await src.stop();
+    await first.close();
+    await second.close();
+  });
 }

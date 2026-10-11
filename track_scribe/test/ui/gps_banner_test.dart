@@ -15,6 +15,9 @@ void main() {
   test('every state has its Arabic label, and no label is danger-as-foreground', () {
     expect(gpsStatusLabel(GpsQuality.none), 'جارٍ البحث عن الإشارة…');
     expect(gpsStatusLabel(GpsQuality.searching), 'جارٍ البحث عن الإشارة…');
+    // M4: the none/searching collapse is intentional — both mean "no usable
+    // signal yet" to the user — so pin the equality, not just the literals.
+    expect(gpsStatusLabel(GpsQuality.none), gpsStatusLabel(GpsQuality.searching));
     expect(gpsStatusLabel(GpsQuality.ok), 'تسجيل نشِط');
     expect(gpsStatusLabel(GpsQuality.degraded), 'إشارة ضعيفة');
     expect(gpsStatusLabel(GpsQuality.lost), 'فقدت الإشارة');

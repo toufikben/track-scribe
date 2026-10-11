@@ -178,6 +178,48 @@ void main() {
     );
     await src.dispose();
   });
+
+  test('a stream error mid-recording is a gap in the signal, not the end of it', () async {
+    // The controller subscribes with cancelOnError: false so one platform
+    // error cannot silently unsubscribe the session mid-walk; the fixes after
+    // the error must still reach the engine and stop() must still work.
+    final src = ControlledFixSource()..stepNanos = 2000000000; // 2 s cadence
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src)],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    src.emitMany(2, accuracyM: 3.0); // ر7 opens
+    await _settle();
+    expect(container.read(recordingProvider).phase, RecordingPhase.recording);
+
+    src.addError(Exception('GNSS provider died'));
+    await _settle();
+    expect(
+      container.read(recordingProvider).phase,
+      RecordingPhase.recording,
+      reason: 'the error alone must not change the session state',
+    );
+
+    // Keep the walker moving: 0.0001° latitude ≈ 11.1 m every 2 s ≈ 5.6 m/s,
+    // inside ر5 for a run and over the 6 m store gate, so real distance.
+    var lat = 36.7538;
+    for (var i = 0; i < 3; i++) {
+      lat += 0.0001;
+      src.emit(lat: lat);
+    }
+    await _settle();
+    final s = container.read(recordingProvider);
+    expect(s.phase, RecordingPhase.recording);
+    expect(s.distanceM, greaterThan(0),
+        reason: 'fixes after the error must still advance the distance');
+
+    await controller.stop();
+    expect(container.read(recordingProvider).phase, RecordingPhase.stopped);
+    await src.dispose();
+  });
 }
 
 /// Waits for [condition] instead of sleeping a fixed window: the source stamps
