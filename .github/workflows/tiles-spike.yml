@@ -63,6 +63,26 @@ jobs:
           echo "osm.pbf: $(stat -c %s $AREA.osm.pbf) bytes"
           df -h "$RUNNER_TEMP" | tail -1
 
+      - name: Fetch the profile's own sources (--only-download, timed apart from the builds)
+        id: sources
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          # Run 38196490280 died here: `data/sources/lake_centerline.shp.zip does
+          # not exist. Run with --download to fetch it`. --osm-path satisfies the
+          # OSM extract, but the OpenMapTiles profile registers three more inputs
+          # (lake centerlines, water polygons, Natural Earth) and Planetiler only
+          # fetches what is missing (Planetiler.getPath: `if ((!Files.exists(path)
+          # || refresh) && url != null)`). Measured as its own step so the build
+          # seconds below are compile time, not network time.
+          start=$SECONDS
+          java -Xmx2g -jar planetiler.jar --only-download \
+            --osm-path="$AREA.osm.pbf" --output=only-download.pmtiles > sources-download.log 2>&1
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+          du -sh data/sources
+          ls -l data/sources
+          df -h "$RUNNER_TEMP" | tail -1
+
       - name: Build $AREA z0-$MAXZOOM (the whole country, OpenMapTiles schema)
         id: country
         run: |
@@ -110,6 +130,7 @@ jobs:
 
       - name: Report
         run: |
+          echo "profile sources downloaded:      ${{ steps.sources.outputs.seconds }} s"
           echo "country z0-${{ inputs.max_zoom }}: ${{ steps.country.outputs.bytes }} bytes in ${{ steps.country.outputs.seconds }} s"
           echo "alger wilaya z0-14:              ${{ steps.wilaya.outputs.bytes }} bytes in ${{ steps.wilaya.outputs.seconds }} s"
           echo "artifact quota is 500 MB — the country pack is uploaded only if it fits."
@@ -128,6 +149,7 @@ jobs:
         with:
           name: planetiler-build-logs
           path: |
+            ${{ runner.temp }}/sources-download.log
             ${{ runner.temp }}/country-build.log
             ${{ runner.temp }}/wilaya-build.log
           retention-days: 30
