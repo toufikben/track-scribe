@@ -94,6 +94,7 @@ jobs:
             --osm-path="$AREA.osm.pbf" \
             --output="$AREA-z0-$max_zoom.pmtiles" \
             --maxzoom="$max_zoom" \
+            --output-layerstats \
             --threads=4 --force > country-build.log 2>&1
           echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
           echo "bytes=$(stat -c %s $AREA-z0-$max_zoom.pmtiles)" >> "$GITHUB_OUTPUT"
@@ -123,10 +124,23 @@ jobs:
           cd "$RUNNER_TEMP"
           curl -sSfL -o gp.tgz \
             "https://github.com/protomaps/go-pmtiles/releases/download/$PMTILES_CLI/go-pmtiles_${PMTILES_CLI#v}_Linux_x86_64.tar.gz"
+          # The tarball's binary is called `pmtiles`, not `go-pmtiles` — run
+          # 38198835240 built both packs fine and died here on the name.
           tar xzf gp.tgz
-          ./go-pmtiles show "$AREA-z0-${{ inputs.max_zoom }}.pmtiles" | head -30
+          ./pmtiles show "$AREA-z0-${{ inputs.max_zoom }}.pmtiles" | head -25
           echo "---"
-          ./go-pmtiles show alger-wilaya-z0-14.pmtiles | head -30
+          echo "=== per-zoom bytes (uncompressed layer sum, from Planetiler's own stats) ==="
+          # Columns, from TileSizeStats.newThreadLocalSerializer: z x y hilbert
+          # tile_bytes layer layer_bytes features geometries attr_bytes keys values
+          zcat "$AREA-z0-${{ inputs.max_zoom }}.pmtiles.layerstats.tsv.gz" | awk -F'\t' '
+            NR>1 { zb[$1] += $7; tb[$1]++ }
+            END { for (z in zb) printf "z%-3s %8.1f MB  %7d tiles\n", z, zb[z]/1048576, tb[z] }' | sort -n
+          echo "=== top 12 layers by bytes ==="
+          zcat "$AREA-z0-${{ inputs.max_zoom }}.pmtiles.layerstats.tsv.gz" | awk -F'\t' '
+            NR>1 { lb[$6] += $7 }
+            END { for (l in lb) printf "%10.1f MB  %s\n", lb[l]/1048576, l }' | sort -rn | head -12
+          echo "=== wilaya pack ==="
+          ./pmtiles show alger-wilaya-z0-14.pmtiles | head -25
 
       - name: Report
         run: |
@@ -152,6 +166,7 @@ jobs:
             ${{ runner.temp }}/sources-download.log
             ${{ runner.temp }}/country-build.log
             ${{ runner.temp }}/wilaya-build.log
+            ${{ runner.temp }}/algeria-z0-${{ inputs.max_zoom }}.pmtiles.layerstats.tsv.gz
           retention-days: 30
 
       # The country pack is deliberately NOT uploaded at z0-14: 671 MB measured
