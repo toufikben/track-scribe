@@ -1,0 +1,145 @@
+name: tiles-spike
+
+# The measurement this repo needs before the map architecture is chosen: can a
+# FREE GitHub runner build our own OSM-derived vector tile packs, how long does
+# it take, and how big is the result. The published size figures say a country
+# at z0-14 is ~671 MB (measured by extracting someone else's planet pack); an
+# APK cannot carry that, and an Actions artifact cannot hold it (500 MB quota).
+# This workflow measures OUR build of the same thing, on the runner we actually
+# have, and prints the numbers into the log instead of believing them.
+#
+# Flag spellings below are read from Planetiler's own source at the pinned tag,
+# not from prose: config/PlanetilerConfig.java defines "minzoom"/"maxzoom" (no
+# hyphen) and config/Bounds.java + config/Arguments.java define "bounds" as
+# westLng,southLat,eastLng,northLat with , or whitespace as the separator.
+#
+# It never runs on a push: it costs tens of minutes and downloads ~1.3 GB
+# (300 MB OSM extract + the OpenMapTiles profile's own Natural Earth / ocean /
+# lake-centerline sources). Trigger it by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      max_zoom:
+        description: 'Zoom ceiling for the country build (start at 12: it must fit the artifact quota)'
+        required: false
+        default: '12'
+
+env:
+  PLANETILER_VERSION: v0.10.2        # Apache-2.0
+  PLANETILER_SHA256: f310bd0413e2e4512b27f4046d418664e8e1d3bf31603c2a70e23de06c167e4d
+  PMTILES_CLI: v1.31.2               # protomaps/go-pmtiles, BSD-3
+  AREA: algeria                      # Geofabrik extract, ODbL
+  # Alger wilaya bbox, west,south,east,north — the province-scale pack an APK
+  # can actually carry.
+  WILAYA_BOUNDS: 2.85,36.42,3.68,37.10
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Toolchain (Java 21 is Planetiler's floor)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: What the runner really is
+        run: |
+          echo "== cpu"; nproc; grep -m1 'model name' /proc/cpuinfo
+          echo "== mem"; free -h
+          echo "== disk"; df -h "$RUNNER_TEMP"
+
+      - name: Fetch planetiler.jar and the OSM extract
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o planetiler.jar \
+            "https://github.com/onthegomap/planetiler/releases/download/$PLANETILER_VERSION/planetiler.jar"
+          echo "$PLANETILER_SHA256  planetiler.jar" | sha256sum -c -
+          echo "jar: $(stat -c %s planetiler.jar) bytes"
+          curl -sSfL -o "$AREA.osm.pbf" \
+            "https://download.geofabrik.de/africa/$AREA-latest.osm.pbf"
+          echo "osm.pbf: $(stat -c %s $AREA.osm.pbf) bytes"
+          df -h "$RUNNER_TEMP" | tail -1
+
+      - name: Build $AREA z0-$MAXZOOM (the whole country, OpenMapTiles schema)
+        id: country
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          max_zoom='${{ inputs.max_zoom }}'
+          start=$SECONDS
+          java -Xmx8g -jar planetiler.jar \
+            --osm-path="$AREA.osm.pbf" \
+            --output="$AREA-z0-$max_zoom.pmtiles" \
+            --maxzoom="$max_zoom" \
+            --threads=4 --force > country-build.log 2>&1
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+          echo "bytes=$(stat -c %s $AREA-z0-$max_zoom.pmtiles)" >> "$GITHUB_OUTPUT"
+          tail -60 country-build.log
+          df -h "$RUNNER_TEMP" | tail -1
+
+      - name: Build Alger-wilaya z0-14 (the pack an APK can ship)
+        id: wilaya
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          start=$SECONDS
+          java -Xmx8g -jar planetiler.jar \
+            --osm-path="$AREA.osm.pbf" \
+            --output="alger-wilaya-z0-14.pmtiles" \
+            --maxzoom=14 \
+            --bounds="$WILAYA_BOUNDS" \
+            --threads=4 --force > wilaya-build.log 2>&1
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+          echo "bytes=$(stat -c %s alger-wilaya-z0-14.pmtiles)" >> "$GITHUB_OUTPUT"
+          tail -60 wilaya-build.log
+          df -h "$RUNNER_TEMP" | tail -1
+
+      - name: Measure the packs (tile counts and bounds, not just bytes)
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gp.tgz \
+            "https://github.com/protomaps/go-pmtiles/releases/download/$PMTILES_CLI/go-pmtiles_${PMTILES_CLI#v}_Linux_x86_64.tar.gz"
+          tar xzf gp.tgz
+          ./go-pmtiles show "$AREA-z0-${{ inputs.max_zoom }}.pmtiles" | head -30
+          echo "---"
+          ./go-pmtiles show alger-wilaya-z0-14.pmtiles | head -30
+
+      - name: Report
+        run: |
+          echo "country z0-${{ inputs.max_zoom }}: ${{ steps.country.outputs.bytes }} bytes in ${{ steps.country.outputs.seconds }} s"
+          echo "alger wilaya z0-14:              ${{ steps.wilaya.outputs.bytes }} bytes in ${{ steps.wilaya.outputs.seconds }} s"
+          echo "artifact quota is 500 MB — the country pack is uploaded only if it fits."
+          df -h "$RUNNER_TEMP" | tail -1
+
+      - name: Upload the province pack (the candidate APK asset)
+        uses: actions/upload-artifact@v4
+        with:
+          name: alger-wilaya-z0-14
+          path: ${{ runner.temp }}/alger-wilaya-z0-14.pmtiles
+          retention-days: 7
+
+      - name: Upload the build logs (the raw evidence behind the two numbers)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: planetiler-build-logs
+          path: |
+            ${{ runner.temp }}/country-build.log
+            ${{ runner.temp }}/wilaya-build.log
+          retention-days: 30
+
+      # The country pack is deliberately NOT uploaded at z0-14: 671 MB measured
+      # elsewhere blows the 500 MB artifact quota and the upload step would fail
+      # the job after a clean build. A z0-12 country pack (140 MB) does fit, so
+      # it goes up when that is what was built.
+      - name: Upload the country pack if it fits the quota
+        if: ${{ steps.country.outputs.bytes != '' && fromJSON(steps.country.outputs.bytes) < 480000000 }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: algeria-z0-${{ inputs.max_zoom }}
+          path: ${{ runner.temp }}/algeria-z0-${{ inputs.max_zoom }}.pmtiles
+          retention-days: 7
