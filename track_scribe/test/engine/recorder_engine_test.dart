@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/engine/recorder_engine.dart';
 import 'package:track_scribe/engine/sport_config.dart';
+import 'package:track_scribe/source/gps_quality.dart' show unmeasuredAccuracyM;
 
 /// Fixture helper kept verbatim from the brief: dLat is a northward offset in
 /// degrees-of-latitude units of 1/111111 deg, i.e. ~1.000757 m per unit on the
@@ -39,9 +40,74 @@ void main() {
     expect(e.storedPoints.length, 2);
   });
 
-  test('re3: gate is capped at 25 m even for terrible accuracy', () {
-    expect(cfg.gateFor(99), 25.0);
-    expect(cfg.gateFor(0.5), 3.0);
+  test('re3/R99: the gate follows the noise instead of capping under it', () {
+    // Spec ر3 read `max(3, 2a)` capped at 25 m. With a good signal the cap
+    // never binds (2 × 12.5 = the same 25 m); with a poor one it demanded less
+    // movement than the fix was uncertain about, and the difference became
+    // phantom distance — 375.1 m for a phone on a desk
+    // (test/evidence/fixtures/real/stationary/). R99 removed the ceiling.
+    expect(cfg.gateFor(12.5), 25.0);  // the cap's old saturation point: unchanged
+    expect(cfg.gateFor(99), 198.0);   // R99: 2 × accuracy, no ceiling
+    expect(cfg.gateFor(0.5), 3.0);    // ر3's floor: unchanged
+  });
+
+  // R99, measured: the desk sessions at accuracy 18.7–82 m stored every point
+  // the old 25 m cap allowed and billed the noise between them.
+  test('R99: at accuracy 30 m a 30 m noise step is below the gate, not a store', () {
+    final e = RecorderEngine(cfg, startNanos: 0);
+    e.onFix(walk(dLat: 0, sec: 0, acc: 30));
+    e.onFix(walk(dLat: 30, sec: 10, acc: 30)); // 30.02 m in 10 s = 3.0 m/s: legit speed, under gate
+    expect(e.storedPoints.length, 1);
+    expect(e.distanceMeters, 0.0);
+    e.onFix(walk(dLat: 70, sec: 20, acc: 30)); // 70.05 m ≥ gate 60 → the first real store
+    expect(e.distanceMeters, closeTo(70.05, 0.05));
+  });
+
+  // R100: the Realme's provider reported 1.1–4.7 m/s for a phone lying on a
+  // desk (test/evidence/fixtures/real/stationary/). The speed claim still
+  // drives ر6's LABEL exactly as the spec words it — what R100 removes is its
+  // reach into the odometer. Distance honesty is carried by R99 (the gate
+  // tracks the noise) and R101 (the heartbeat never bills below it), so a
+  // fabricated speed cannot mint a metre whatever it claims.
+  test('R100: a fabricated speed cannot mint distance from a phone on a desk', () {
+    RawFix desk(int sec) => RawFix(
+          lat: 36.7538 + (sec.isEven ? 8 : -8) / 111111.0, lon: 3.1856,
+          timeNanos: sec * 1000000000, accuracyM: 30, speedMps: 4.7,
+        );
+    final e = RecorderEngine(cfg, startNanos: 0);
+    e.onFix(RawFix(
+        lat: 36.7538, lon: 3.1856, timeNanos: 0, accuracyM: 30, speedMps: 4.5));
+    for (var s = 1; s <= 40; s++) {
+      e.onFix(desk(s));
+      expect(e.distanceMeters, 0.0, reason: 'phantom drift at second $s');
+    }
+    expect(
+      e.storedPoints.skip(1)
+          .every((p) => p.type == WaypointType.idle || p.type == WaypointType.rejected),
+      isTrue,
+      reason: 'the desk produced no billed point: every append after the first '
+          'is a ر3 marker or a ر5 rejection (±8 m in 1 s implies 16 m/s)',
+    );
+    expect(e.elapsedNanos, 40_000_000_000); // ر6: time keeps flowing
+  });
+
+  // R74's sentinel with R99: a fix whose 1σ was never measured bounds no
+  // distance at all. The gate is infinite, so nothing bills and nothing moves
+  // the yardstick — maximum caution, never permissiveness.
+  test('R74/R99: an unmeasured accuracy bills nothing even at running speed', () {
+    final e = RecorderEngine(cfg, startNanos: 0);
+    e.onFix(walk(dLat: 0, sec: 0, acc: unmeasuredAccuracyM));
+    for (var s = 1; s <= 20; s++) {
+      e.onFix(walk(dLat: 5.0 * s, sec: s, acc: unmeasuredAccuracyM)); // 5 m/s of real position
+      expect(e.distanceMeters, 0.0, reason: 'billed against an unmeasured 1σ at $s');
+    }
+    expect(e.storedPoints.first.type, WaypointType.normal);
+    expect(
+      e.storedPoints.skip(1).every((p) => p.type == WaypointType.idle),
+      isTrue,
+      reason: 'with an infinite gate only the ر3 heartbeat markers can be '
+          'appended, and a marker bills nothing',
+    );
   });
 
   test('re4: a 300 km teleport adds zero distance and is flagged rejected', () {
@@ -58,11 +124,27 @@ void main() {
         greaterThan(1000)); // ≈ 300 227 m — the raw point is kept, never deleted
   });
 
-  test('re3 heartbeat: 15 s with no movement still stores a point', () {
+  test('re3/R101 heartbeat: 15 s with no movement stores a point and no distance', () {
     final e = RecorderEngine(cfg, startNanos: 0);
     e.onFix(walk(dLat: 10, sec: 0));
     e.onFix(walk(dLat: 12, sec: 16)); // 2.0015 m (inside gate) but 16 s ≥ 15 s
-    expect(e.storedPoints.length, 2);
+    expect(e.storedPoints.length, 2); // ر3 keeps its promise: a point exists
+    // R101: it is a marker, not progress. The old heartbeat branch billed
+    // whatever sub-gate displacement the noise happened to reach — one of the
+    // two doors the desk phantom came through (375.1 m at 12.5 m per store).
+    expect(e.storedPoints.last.type, WaypointType.idle);
+    expect(e.distanceMeters, 0.0);
+  });
+
+  test('R101: a heartbeat below the gate appends without billing, above it still bills', () {
+    final e = RecorderEngine(cfg, startNanos: 0);
+    e.onFix(walk(dLat: 0, sec: 0)); // gate(acc 4) = 8 m
+    e.onFix(walk(dLat: 6, sec: 15)); // 6.005 m: below the gate, heartbeat due
+    expect(e.storedPoints.length, 2); // the point is kept (ر3/ر9)
+    expect(e.distanceMeters, 0.0); // and is not billed (R101)
+    e.onFix(walk(dLat: 20, sec: 20)); // 20.02 m ≥ gate → real movement, billed once
+    expect(e.distanceMeters, closeTo(20.015, 0.01));
+    expect(e.storedPoints.length, 3);
   });
 
   test('non-monotonic timestamps are dropped, not averaged', () {
@@ -178,18 +260,27 @@ void main() {
     expect(seen.last, (15, WaypointType.normal));// truthful verdict for an appended fix
     expect(seen.length, e.stats.fixCount);       // sink still called exactly once
 
-    // Scenario B: resume movement BELOW the gate. Buggy flow appended once but
-    // fell through to a `skipped` verdict that lied (a point WAS appended) and
-    // billed 0 m of real movement.
+    // Scenario B (fix round 3, R100/R101): movement BELOW the gate that ENDS
+    // the idle label. The shipped build billed 5.0038 m here because the resume
+    // itself was treated as evidence of movement — a table claiming 5 m/s
+    // therefore minted metres. Under R100 the speed claim only clears the flag;
+    // the sub-gate displacement stays pending, nothing is appended and nothing
+    // is billed until the gate (R99) actually opens.
     final seenB = <(int, WaypointType)>[];
     final b = RecorderEngine(cfg, startNanos: 0,
         rawSink: (fix, verdict) => seenB.add((fix.timeNanos ~/ 1000000000, verdict)));
     b.onFix(walk(dLat: 0, sec: 0));
-    for (int t = 1; t <= 13; t++) { b.onFix(walk(dLat: 0, sec: t)); }
+    for (int t = 1; t <= 13; t++) { b.onFix(walk(dLat: 0, sec: t)); } // entry marker @13
     b.onFix(walk(dLat: 5, sec: 14));             // dt=1 s → 5.0038 m < gate 8 m
-    expect(b.storedPoints.length, 3);            // resume point appended, once
-    expect(b.distanceMeters, closeTo(5.0038, 0.01));
-    expect(seenB.last, (14, WaypointType.normal));
+    expect(b.storedPoints.length, 2);            // no append: below the noise floor
+    expect(b.distanceMeters, 0.0);
+    expect(seenB.last, (14, WaypointType.skipped)); // no append → the honest verdict
+    b.onFix(walk(dLat: 10, sec: 16));            // 10.008 m ≥ gate → one append, billed once
+    expect(b.storedPoints.length, 3);
+    expect(b.distanceMeters, closeTo(10.0076, 0.01));
+    expect(b.isIdle, isFalse);
+    expect(seenB.last, (16, WaypointType.normal));
+    expect(seenB.length, b.stats.fixCount);      // sink still called exactly once
   });
 
   test('fix-r2 #2: ر3 idle heartbeat fires while idle with a stale anchor (ر6 keeps distance frozen)', () {

@@ -43,7 +43,8 @@ const Duration gpsLostAfter = Duration(seconds: 20);
 /// worst-case-strict sentinel and keeps every consumer safe by construction:
 /// `isFixGoodEnough(inf)` is false (never promotes the gate),
 /// `GpsQualityX.fromAccuracy(inf)` renders `searching` (inf > 35), and
-/// `SportConfig.gateFor(inf)` clamps to `maxStoreDistanceM` — maximum
+/// `SportConfig.gateFor(inf)` is infinite (R99 removed ر3's 25 m ceiling), so
+/// nothing is billed against a 1σ that was never measured — maximum
 /// caution, never permissiveness. At the persistence boundary
 /// `ActivityRepository` maps the sentinel to SQL NULL on write (`appendPoints`,
 /// `saveResume`) and back to `unmeasuredAccuracyM` on read (`loadResume`), so a

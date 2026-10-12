@@ -130,6 +130,7 @@ class RecorderEngine {
 
     final dt = _ticker.secondsSince(anchor.timeNanos);
     final d = haversineMeters(anchor.lat, anchor.lon, fix.lat, fix.lon);
+    final gateM = config.gateFor(fix.accuracyM);
     final impliedSpeed = dt > 0 ? d / dt : null;
     final speed = fix.speedMps ?? impliedSpeed;        // Doppler wins over differencing
 
@@ -157,14 +158,6 @@ class RecorderEngine {
     // for this fix — `_updateIdle` no longer stores, it only reports the
     // transition — so a double append is structurally impossible and the
     // returned verdict always matches the append it made.
-    if (idleEvent == _IdleTransition.resumed) {
-      // Idle→resume: append exactly once and bill the pending `d` measured
-      // from the pre-idle anchor — this is real movement that ended the idle,
-      // never standing-still, so ر6's zero-distance rule does not cover it.
-      _store(fix, WaypointType.normal, addDistance: true);
-      return WaypointType.normal;
-    }
-
     if (_idle) {
       // ر6 — time flows, distance does not. Entering idle and the heartbeat
       // share this single store: at most one append per fix.
@@ -173,15 +166,46 @@ class RecorderEngine {
       }
       return WaypointType.idle;
     }
-    if (d >= config.gateFor(fix.accuracyM) || heartbeatDue) {
+    if (d >= gateM) {
       _store(fix, WaypointType.normal, addDistance: true); // ر2 — from the anchor
       return WaypointType.normal;
+    }
+    if (heartbeatDue) {
+      // R101 — ر3 keeps its promise (a point exists every 15 s) without ر2's
+      // yardstick moving: displacement under the noise gate is not evidence of
+      // movement, and billing it is one of the two doors the desk sessions came
+      // through (12.5 m of nothing, every 11 s, for 375.1 m). Carrying it
+      // pending is also what keeps a genuine 0.5 m/s crawl from being erased by
+      // each heartbeat.
+      _store(fix, WaypointType.idle, addDistance: false, moveAnchor: false);
+      return WaypointType.idle;
     }
     return WaypointType.skipped;
   }
 
   /// Idle state machine (ر6) with NO store side effects: `_process` owns every
   /// append, guaranteeing exactly one store decision per fix (fix round 2).
+  ///
+  /// R100 — the speed claim that ر6 was written with is kept EXACTLY as the
+  /// spec words it (it drives the label, and a phone that reports < 0.4 m/s is
+  /// telling the truth about being stopped far more often than not), but it is
+  /// no longer allowed to reach the odometer: leaving idle only clears the
+  /// flag, and `_process` bills movement when the position itself clears R99's
+  /// gate. That is what the Realme's desk sessions demanded — the provider
+  /// claimed 1.1–4.7 m/s for a phone lying on a table
+  /// (`test/evidence/fixtures/real/stationary/`), and in the shipped build a
+  /// resume on that claim billed 5 m of pure noise, while the same claim kept
+  /// the speed route from ever entering idle.
+  ///
+  /// Distance honesty therefore no longer depends on this machine at all: with
+  /// the gate tracking the noise (R99) and the heartbeat refusing to bill below
+  /// it (R101), a stationary phone accumulates nothing whatever it claims about
+  /// speed. A measured attempt to ALSO enter idle by position consensus was
+  /// tried and reverted: at ±10 m of independent scatter the net displacement
+  /// after 12 s of standing is indistinguishable from 12 s of walking, so the
+  /// rule read a moving track as parked and threw the metres away (1 km fixture
+  /// → 873 m, 50/50 seeds above the 1 % bar). The ambiguity is physical, and
+  /// the engine resolves it in the safe direction: under-count, never invent.
   _IdleTransition _updateIdle(RawFix fix, double speed) {
     if (speed < config.idleSpeedMps) {
       _idleSinceNanos ??= fix.timeNanos;
@@ -191,10 +215,7 @@ class RecorderEngine {
       }
     } else {
       _idleSinceNanos = null;
-      if (_idle) {
-        _idle = false;
-        return _IdleTransition.resumed;
-      }
+      _idle = false; // a speed claim ends the label; it can never bill
     }
     return _IdleTransition.none;
   }
@@ -238,8 +259,11 @@ class RecorderEngine {
   /// Appends to the polyline (`storedPoints`: map, distance, resume
   /// checkpoint), stamps the ر3 heartbeat clock (_lastAppendNanos), and moves
   /// the anchor only when the point passed the jump test — rejected points
-  /// are kept (ر9) but must never become the yardstick (R39).
-  StoredPoint _store(RawFix fix, WaypointType type, {required bool addDistance}) {
+  /// are kept (ر9) but must never become the yardstick (R39). `moveAnchor:
+  /// false` is for the R101 heartbeat marker: it records that a point was due
+  /// without conceding that the sub-gate displacement up to it was movement.
+  StoredPoint _store(RawFix fix, WaypointType type,
+      {required bool addDistance, bool moveAnchor = true}) {
     final anchor = _anchor;
     if (addDistance && anchor != null) {
       _distanceM += haversineMeters(anchor.lat, anchor.lon, fix.lat, fix.lon);
@@ -250,12 +274,14 @@ class RecorderEngine {
     );
     _points.add(p);
     _lastAppendNanos = fix.timeNanos;
-    if (type != WaypointType.rejected) _anchor = p;
+    if (type != WaypointType.rejected && moveAnchor) _anchor = p;
     return p;
   }
 }
 
 /// Outcome of the ر6 idle state machine for the fix just processed. Exposes no
 /// store side effects — the caller in `_process` makes the single append
-/// decision (fix round 2, Important 1).
-enum _IdleTransition { none, entered, resumed }
+/// decision (fix round 2, Important 1). Leaving idle needs no value here: R100
+/// signals it with the flag alone, and `_process`'s gate branch does the
+/// billing.
+enum _IdleTransition { none, entered }

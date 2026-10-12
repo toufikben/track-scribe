@@ -108,6 +108,12 @@ void main() {
           '(engine ${engine.toStringAsFixed(1)} m vs odometer '
           '${naiveOdometerM(fixes).toStringAsFixed(1)} m)',
     );
+    // The noise-model table in this file's header cites this seed, so the
+    // current build prints its own figure instead of inheriting the old one.
+    // ignore: avoid_print
+    print('seed 42 (±10 m at accuracy 10): engine '
+        '${engine.toStringAsFixed(1)} m (${(err * 100).toStringAsFixed(2)} %), '
+        'odometer ${naiveOdometerM(fixes).toStringAsFixed(0)} m');
   });
 
   test('±10 m noise: the 1 % bar is seed-dependent, measured not claimed', () {
@@ -148,6 +154,46 @@ void main() {
       '${(errs[seeds ~/ 2] * 100).toStringAsFixed(2)} %, '
       '$aboveBar/$seeds above the 1 % bar',
     );
+  });
+
+  // The declared 1σ is the only metre the engine is allowed to trust, so a
+  // receiver that over-reports its own precision inflates the track. Measured
+  // here (seed 42, ±10 m of true scatter) and printed so the fidelity doc can
+  // cite a number a CI run reproduces instead of one remembered from a scratch
+  // session — the first version of that table was exactly such an orphan.
+  test('declared accuracy is the lever: over-claiming precision inflates the track', () {
+    final perSport = <Sport, Map<double, double>>{};
+    for (final sport in [Sport.walk, Sport.run]) {
+      final byAccuracy = <double, double>{};
+      for (final acc in [5.0, 10.0, 20.0]) {
+        byAccuracy[acc] = _engineMetres(
+          line(
+              metres: 1000,
+              speedMps: 1.4,
+              accuracyM: acc,
+              jitterM: 10,
+              seed: 42),
+          sport,
+        );
+      }
+      perSport[sport] = byAccuracy;
+      // ignore: avoid_print
+      print('${sport.name} ±10 m, seed 42: '
+          '${byAccuracy.entries.map((e) => 'acc ${e.key.toStringAsFixed(0)} → '
+              '${e.value.toStringAsFixed(1)} m '
+              '(${((e.value - 1000) / 10).toStringAsFixed(2)} %)').join('; ')}');
+    }
+    for (final e in perSport.entries) {
+      // R99's direction pinned: a tighter declared 1σ opens the gate and lets
+      // more of the scatter through, so the track must come out LONGER. If an
+      // engine ever made the over-claimed run agree with the honest one, the
+      // gate would no longer be reading the accuracy.
+      expect(
+        e.value[5.0]!,
+        greaterThan(e.value[20.0]!),
+        reason: '${e.key.name}: the gate must track the declared accuracy',
+      );
+    }
   });
 
   test('25 m teleportation does not create distance (rule ر4)', () {
