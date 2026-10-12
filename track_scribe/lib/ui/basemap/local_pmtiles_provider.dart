@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -55,13 +56,27 @@ class LocalPmTilesProvider implements VectorTileProvider {
     for (final archive in _archives) {
       if (tile.z < archive.minZoom || tile.z > archive.maxZoom) continue;
       final id = ZXY(tile.z, tile.x, tile.y).toTileId();
-      final t = await archive.tile(id);
       try {
-        return TileResponseData(Uint8List.fromList(t.bytes()));
+        // inside the try: tile() awaits lookup + readAt and can itself throw.
+        final t = await archive.tile(id);
+        final bytes = t.bytes();
+        // the renderer's invariant: never produce empty TileResponseData —
+        // a zero-length directory entry is treated as absent.
+        if (bytes.isEmpty) continue;
+        return TileResponseData(Uint8List.fromList(bytes));
       } on TileNotFoundException {
         continue; // this pack doesn't have it — try the next
-      } catch (_) {
-        return const TileResponseNotFound();
+      } catch (error) {
+        // e.g. a read pool closed under a live provider, or a corrupt pack:
+        // surface it to dart:developer (the app's logger-free channel, as in
+        // the recording controller) — never rethrow to the renderer, never
+        // let one unreadable pack hide the healthy shallower one.
+        developer.log(
+          'z${tile.z}/${tile.x}/${tile.y} unreadable from one pack, trying the next',
+          name: 'track_scribe/basemap',
+          error: error,
+        );
+        continue;
       }
     }
     return const TileResponseNotFound();
