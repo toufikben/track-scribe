@@ -119,7 +119,7 @@ Basemap (مصدر بلاطات محلي أو شبكة مولّدة — الوا�
 - **العربية على الخريطة:** العارض يستبعد العربية من التموضع المنحني حرفًا-حرفًا ويرسمها سلسلة واحدة متصلة (`_curveSafe` في `symbol_layouter.dart`) — فلا حروف مقطوعة على الطرق.
 - **النسبة داخل العرض دائمًا:** «© OpenStreetMap contributors · © OpenMapTiles · Style: OpenFreeMap (MIT)» — واجبة قانونيًا (ODbL + CC-BY) ومعروضة بشكل لا يُغلق.
 
-**الوصلة الأوفلاين:** `PmTilesVectorTileProvider` في 2.9.1 يعمل بـ HTTP فقط (متحقق من مصدره واختباراته)، فنكتب مزوّدًا محليًا من ~100 سطر: `VectorTileProvider` بواجهة من 4 أعضاء (`minimumZoom`, `maximumZoom`, `load(TileKey)`, `dispose()`) يقرأ ملف `.pmtiles` من الأصول عبر حزمة `pmtiles` 2.2.0 (BSD-3)، ويُحقن في الأسلوب عبر `resolveProvider`. README الحزمة يوثّق هذا النمط حرفيًا. البديل الجاهز إن تعثّر: MBTiles + `flutter_map_vector_tiles_mbtiles` 1.0.0 (مرافق رسمي، sqlite3 ffi).
+**الوصلة الأوفلاين:** `PmTilesVectorTileProvider` في 2.9.1 يعمل بـ HTTP فقط (متحقق من مصدره واختباراته)، فنكتب مزوّدًا محليًا من ~100 سطر: `VectorTileProvider` بواجهة من 4 أعضاء (`minimumZoom`, `maximumZoom`, `load(TileKey)`, `dispose()`) يقرأ ملف `.pmtiles` من الأصول عبر حزمة `pmtiles` 2.2.0 (BSD-2، مؤكد من ملف LICENSE)، ويُحقن في الأسلوب عبر `resolveProvider`. README الحزمة يوثّق هذا النمط حرفيًا. البديل الجاهز إن تعثّر: MBTiles + `flutter_map_vector_tiles_mbtiles` 1.0.0 (مرافق رسمي، sqlite3 ffi).
 
 **شاشة التسجيل (مطابقة لجدول المنافسين §5.1):**
 - علامة الموقع + **هالة دقة GPS** (نصف قطر 1σ حقيقي من `accuracy`).
