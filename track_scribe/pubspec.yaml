@@ -29,6 +29,8 @@ dependencies:
   drift: ^2.35.2
   path_provider: ^2.1.5
   path: ^1.9.0
+  flutter_map_vector_tiles: 2.9.1
+  pmtiles: 2.2.0
 dev_dependencies:
   flutter_test: { sdk: flutter }
   flutter_lints: ^6.0.0
@@ -37,6 +39,10 @@ dev_dependencies:
   gpx: ^2.5.0
 flutter:
   uses-material-design: true
+  assets:
+    - assets/tiles/
+    - assets/styles/
+    - assets/fonts/
   fonts:
     - family: PlexArabic
       fonts:
