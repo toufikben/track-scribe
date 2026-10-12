@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="track-scribe-device"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>device session 3</name><type>run</type><trkseg>
+      <trkpt lat="36.2534793" lon="2.232936"><ele>0</ele><time>2026-10-11T21:08:39Z</time><extensions><acc>24.85700035095215</acc><spd>1.0478730201721191</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2534663" lon="2.2329626"><ele>0</ele><time>2026-10-11T21:08:54Z</time><extensions><acc>21.461999893188477</acc><spd>2.259915828704834</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2535195" lon="2.2328589"><ele>0</ele><time>2026-10-11T21:09:09Z</time><extensions><acc>27.448999404907227</acc><spd>1.9419437646865845</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2536143" lon="2.2329082"><ele>0</ele><time>2026-10-11T21:09:24Z</time><extensions><acc>24.55900001525879</acc><spd>1.911400318145752</spd><typ>normal</typ></extensions></trkpt>
+  </trkseg></trk>
+</gpx>

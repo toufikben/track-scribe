@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="track-scribe-device"
+  xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>device session 4</name><type>run</type><trkseg>
+      <trkpt lat="36.2535794" lon="2.2329132"><ele>0</ele><time>2026-10-11T21:11:05Z</time><extensions><acc>32.49700164794922</acc><spd>1.1189687252044678</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.253632" lon="2.2327305"><ele>0</ele><time>2026-10-11T21:11:21Z</time><extensions><acc>21.55699920654297</acc><spd>1.2239680290222168</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2537086" lon="2.2327103"><ele>0</ele><time>2026-10-11T21:11:36Z</time><extensions><acc>22.225000381469727</acc><spd>1.9495700597763062</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2537849" lon="2.2328462"><ele>0</ele><time>2026-10-11T21:11:52Z</time><extensions><acc>19.981000900268555</acc><spd>1.6141997575759888</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2536302" lon="2.2327819"><ele>0</ele><time>2026-10-11T21:12:07Z</time><extensions><acc>20.134000778198242</acc><spd>0.09178607910871506</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2536017" lon="2.2327081"><ele>0</ele><time>2026-10-11T21:12:22Z</time><extensions><acc>18.652000427246094</acc><spd>1.6347326040267944</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2535134" lon="2.2326458"><ele>0</ele><time>2026-10-11T21:12:38Z</time><extensions><acc>20.18400001525879</acc><spd>1.6493945121765137</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2534808" lon="2.2327205"><ele>0</ele><time>2026-10-11T21:12:54Z</time><extensions><acc>23.881000518798828</acc><spd>1.6167974472045898</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2535155" lon="2.2327763"><ele>0</ele><time>2026-10-11T21:13:10Z</time><extensions><acc>25.22599983215332</acc><spd>1.6443517208099365</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2536886" lon="2.2327554"><ele>0</ele><time>2026-10-11T21:13:26Z</time><extensions><acc>24.511999130249023</acc><spd>2.254770517349243</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2537754" lon="2.2327248"><ele>0</ele><time>2026-10-11T21:13:41Z</time><extensions><acc>27.240999221801758</acc><spd>2.2944259643554688</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2537573" lon="2.2328293"><ele>0</ele><time>2026-10-11T21:13:57Z</time><extensions><acc>31.704999923706055</acc><spd>2.094137668609619</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2537429" lon="2.2328276"><ele>0</ele><time>2026-10-11T21:13:57Z</time><extensions><acc>31.08099937438965</acc><spd>2.0902881622314453</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2538589" lon="2.2327199"><ele>0</ele><time>2026-10-11T21:14:13Z</time><extensions><acc>44.12300109863281</acc><spd>3.2174580097198486</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2540106" lon="2.2325944"><ele>0</ele><time>2026-10-11T21:14:28Z</time><extensions><acc>46.540000915527344</acc><spd>3.4624874591827393</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2539419" lon="2.2328741"><ele>0</ele><time>2026-10-11T21:14:38Z</time><extensions><acc>55.395999908447266</acc><spd>3.204310655593872</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2537338" lon="2.2330846"><ele>0</ele><time>2026-10-11T21:14:44Z</time><extensions><acc>59.0890007019043</acc><spd>4.152679920196533</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2535579" lon="2.2331482"><ele>0</ele><time>2026-10-11T21:14:47Z</time><extensions><acc>61.51100158691406</acc><spd>4.393848896026611</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2534822" lon="2.233195"><ele>0</ele><time>2026-10-11T21:14:48Z</time><extensions><acc>61.67300033569336</acc><spd>4.491559982299805</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2534369" lon="2.23321"><ele>0</ele><time>2026-10-11T21:14:49Z</time><extensions><acc>61.678001403808594</acc><spd>4.671900272369385</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2533972" lon="2.2332163"><ele>0</ele><time>2026-10-11T21:14:50Z</time><extensions><acc>60.4119987487793</acc><spd>4.4229583740234375</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2533626" lon="2.233229"><ele>0</ele><time>2026-10-11T21:14:51Z</time><extensions><acc>60.020999908447266</acc><spd>4.381272792816162</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2536236" lon="2.2331518"><ele>0</ele><time>2026-10-11T21:15:05Z</time><extensions><acc>44.340999603271484</acc><spd>2.5722432136535645</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2538339" lon="2.2329422"><ele>0</ele><time>2026-10-11T21:15:10Z</time><extensions><acc>41.680999755859375</acc><spd>2.945358991622925</spd><typ>rejected</typ></extensions></trkpt>
+      <trkpt lat="36.2538552" lon="2.2329084"><ele>0</ele><time>2026-10-11T21:15:11Z</time><extensions><acc>40.659000396728516</acc><spd>3.076470136642456</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.253885" lon="2.2327293"><ele>0</ele><time>2026-10-11T21:15:26Z</time><extensions><acc>36.99700164794922</acc><spd>2.5976943969726562</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2536488" lon="2.2327842"><ele>0</ele><time>2026-10-11T21:15:35Z</time><extensions><acc>33.869998931884766</acc><spd>2.5310134887695312</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2535496" lon="2.232908"><ele>0</ele><time>2026-10-11T21:15:50Z</time><extensions><acc>26.058000564575195</acc><spd>2.029371976852417</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2535001" lon="2.2329043"><ele>0</ele><time>2026-10-11T21:16:05Z</time><extensions><acc>23.20400047302246</acc><spd>2.111518144607544</spd><typ>normal</typ></extensions></trkpt>
+      <trkpt lat="36.2534157" lon="2.2328272"><ele>0</ele><time>2026-10-11T21:16:21Z</time><extensions><acc>25.273000717163086</acc><spd>2.1184282302856445</spd><typ>normal</typ></extensions></trkpt>
+  </trkseg></trk>
+</gpx>

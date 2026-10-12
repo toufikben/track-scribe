@@ -13,8 +13,34 @@ measured from a mapped course — OpenStreetMap routing or a measured loop).
 - `real/` — one entry per device-recorded course, as soon as an installable
   APK exists (CI is the only builder). Naming: `<sport>-<truth-metres>.gpx`
   plus a sidecar `<sport>-<truth-metres>.gpx.truth` holding the ground-truth
-  metres (one number per line). The golden replay test only reads this
-  directory and skips itself with a printed reason while it is empty.
+  metres (line 1) and the accuracy in force in metres (line 2, ruling R95;
+  default 5.0). The golden replay test only reads this directory's own files
+  and skips itself with a printed reason while it is empty.
+- `real/stationary/` — device-recorded courses whose ground truth is **zero**:
+  the phone lay on a desk with a recording running and nobody carried it, so no
+  map measurement is involved and the truth is known by observation, not by
+  routing. They are kept in this subdirectory because `golden_replay_test.dart`
+  grades a *relative* error `|engine − truth| / truth`, which is undefined at a
+  truth of 0 m; `test/evidence/stationary_drift_test.dart` reads them and
+  asserts an *absolute* budget instead. Contents (captured 2026-10-11 on the
+  Realme C33, pulled from the activity DB):
+
+  | fixture | stored points | elapsed | accuracy in force | billed before R99–R102 | billed after |
+  |---|---|---|---|---|---|
+  | `run-0m-desk-1.gpx` | 20 | 115 s | 53.488 m | 123.3 m | 0.0 m |
+  | `run-0m-desk-2.gpx` | 13 | 160 s | 25.687 m | 121.4 m | 0.0 m |
+  | `run-0m-desk-3.gpx` | 4 | 45 s | 24.857 m | 25.2 m | 0.0 m |
+  | `run-0m-desk-4.gpx` | 30 | 329 s | 32.497 m | 375.1 m | 0.0 m |
+
+  The "before" column is the replayed engine distance, and for sessions 3 and 4
+  it matches the `distance_m` the phone itself persisted — i.e. the phantom is
+  reproducible in CI from the stored points alone, with no raw feed. The
+  "after" column is the same replay on the R99–R102 engine, printed by
+  `flutter test test/evidence/stationary_drift_test.dart` in every run, and the
+  1 km calibration it used to be measured against came out bit-identical
+  (`seed 42 … engine 1004.6 m (0.46 %)`) — the fix removed the phantom without
+  touching a metre of honest track. See
+  `docs/superpowers/evidence/2026-10-09-fidelity-baseline.md`.
 
 Capture procedure (plan Task 11 step 3): record a course on the phone, pull
 the activity DB (`adb exec-out run-as dev.toufik.track_scribe cat
