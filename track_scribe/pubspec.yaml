@@ -34,6 +34,7 @@ dependencies:
 dev_dependencies:
   flutter_test: { sdk: flutter }
   flutter_lints: ^6.0.0
+  http: ^1.6.0
   drift_dev: ^2.35.1
   build_runner: ^2.4.15
   gpx: ^2.5.0
@@ -42,6 +43,7 @@ flutter:
   assets:
     - assets/tiles/
     - assets/styles/
+    - assets/styles/sprites/
     - assets/fonts/
   fonts:
     - family: PlexArabic
