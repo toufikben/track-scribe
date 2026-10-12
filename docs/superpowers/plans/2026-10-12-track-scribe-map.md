@@ -21,7 +21,7 @@
 - Dep pins: `flutter_map_vector_tiles: 2.9.1`, `pmtiles: 2.2.0` (both licenses verified: BSD-3 / BSD-2-Clause).
 - Style colors: land background `#101315` (= `Palette.bg`), water `#182128` (spec's «مائلًا» — leaning blue), live route `#C6FF3D` (= `Palette.accent`, 5 px), speed gradient slow `#4D6112` → fast `#C6FF3D`, grade shading same ramp (flat → steep).
 - Attribution row, always visible and never dismissable, exactly: `© OpenStreetMap contributors · © OpenMapTiles · Style: OpenFreeMap (MIT)`.
-- Zero runtime network: `StyleReader(cache: false)`, `asset://` URI, `resolveProvider`; the custom provider never touches http; `cacheBytesToDisk => false`.
+- Zero runtime network: `StyleReader(cache: false)`, `asset://` URI, `resolveProvider`; the custom provider never touches http; `cacheBytesToDisk => false`. The bundled style deliberately KEEPS the upstream `"url":"https://tiles.openfreemap.org/planet"` (MIT attribution fidelity), and `style_reader.dart:276-277` short-circuits it only when `resolveProvider` returns a provider for that exact source id — so **every** `StyleReader` call site must pass `resolveProvider` with id `openmaptiles`. A map test that wires a wrong id is a bug that would dial out; `test/ui/map_style_test.dart` keeps a no-network client so a mis-wire fails loudly instead.
 - Recording never blocks on the map: while the style loads, or if it fails, the band shows `Palette.bg` / `GridBasemap` respectively — the route polyline stays visible in the fallback.
 - Map labels use the system font (renderer ignores `glyphs`); Arabic reaches the map via Android fallback; UI stays Arabic-first RTL (R23 explicit `Directionality`); no flutter_localizations; IBM Plex Sans Arabic assets unchanged.
 - Contrast law unchanged: `Palette` tokens and `test/theme/palette_contrast_test.dart` are laws; `danger` stays reserved for stop. Map internals (grid/gradient/water) are decoration — no contrast claims.
@@ -505,6 +505,13 @@ git commit -m "feat(map): local VectorTileProvider over bundled PMTiles (exact t
 
 **Verified upstream facts (do not re-verify):** the style at `https://tiles.openfreemap.org/styles/dark` (MIT) has sources `openmaptiles` (vector, url `https://tiles.openfreemap.org/planet`) and `ne2_shaded` (raster, Natural Earth hillshade); sprite `https://tiles.openfreemap.org/sprites/ofm_f384/ofm` (ofm.json / ofm.png / ofm@2x.png all HTTP 200); glyphs `https://tiles.openfreemap.org/fonts/…` (the renderer has zero glyph handling — remove the key so no reader can mistake it for data); background `rgb(12,12,12)`; water fill `rgb(27,27,29)`; exactly 1 raster layer (it references `ne2_shaded`).
 
+**Corrections established while executing Task 3 (measured, binding for Tasks 4/6):**
+- The asset style URI is `asset://assets/styles/dark.json` — `rootBundle` keys carry the `assets/` prefix, so `asset://styles/dark.json` cannot resolve.
+- There is no `Style.tileProviders`; the resolved map is `style.providers.providers`.
+- Upstream drift: the current `dark` style has **0** layers referencing `ne2_shaded` (the source itself is stripped regardless); the water literal is `rgb(27 ,27 ,29)` with spaces — rewrite by intent, scoped to water/waterway.
+- flutter_map_vector_tiles 2.9.1 never requests `ofm@2x.json` (which does not exist upstream) and falls back to the 1x sprite; `ofm@2x.png` is bundled but unused by the renderer — harmless, and a future @2x support fix would need it.
+- `pubspec.yaml` needs an explicit `- assets/styles/sprites/` entry: Flutter's asset directory declarations are NOT recursive.
+
 - [ ] **Step 1: Download the style + sprite**
 
 ```bash
@@ -519,7 +526,7 @@ curl -s -O https://tiles.openfreemap.org/sprites/ofm_f384/ofm@2x.png
 
 Copy `dark.json` → `track_scribe/assets/styles/dark.json` and apply EXACTLY these edits (a one-off script is fine, but commit the RESULT, not the script):
 
-1. `"sprite":"https://tiles.openfreemap.org/sprites/ofm_f384/ofm"` → `"sprite":"sprites/ofm"` (resolved relative to the asset style URI → `asset://styles/sprites/ofm`, verified resolution order in style_reader.dart).
+1. `"sprite":"https://tiles.openfreemap.org/sprites/ofm_f384/ofm"` → `"sprite":"sprites/ofm"` (resolved relative to the asset style URI; note the style URI itself must be `asset://assets/styles/dark.json` because rootBundle keys include the `assets/` prefix — corrected as executed, Tasks 4/6 use that URI).
 2. Delete the `"glyphs"` key entirely.
 3. Delete the `ne2_shaded` source entry from `sources`, and delete EVERY layer whose `"source"` is `"ne2_shaded"` (1 layer; grep for it).
 4. `"background-color":"rgb(12,12,12)"` (the `background` layer) → `"background-color":"#101315"`.
@@ -553,7 +560,7 @@ void main() {
 
   test('bundled dark style loads with zero network and resolves sprites', () async {
     final style = await StyleReader(
-      uri: 'asset://styles/dark.json',
+      uri: 'asset://assets/styles/dark.json',
       cache: false,
       httpClient: _NoNetworkClient(),
       resolveProvider: (id) async => id == 'openmaptiles'
@@ -562,7 +569,7 @@ void main() {
     ).read();
 
     expect(style.theme, isNotNull);
-    expect(style.tileProviders, isNotEmpty);
+    expect(style.providers.providers, isNotEmpty);
     expect(style.sprites, isNotNull); // asset sprite sheet resolved
     style.dispose();
   });
@@ -692,7 +699,7 @@ final mapStyleProvider = FutureProvider<Style>((ref) async {
     cacheKey: 'pmtiles:dz-bundled',
   );
   final style = await StyleReader(
-    uri: 'asset://styles/dark.json',
+    uri: 'asset://assets/styles/dark.json',
     cache: false,
     resolveProvider: (id) async => id == 'openmaptiles' ? provider : null,
   ).read();
@@ -801,7 +808,7 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
                     children: [
                       VectorTileLayer(
                         theme: s.theme,
-                        tileProviders: s.tileProviders,
+                        tileProviders: s.providers.providers,
                         sprites: s.sprites,
                         diskCacheMaximumSizeInBytes: 0,
                       ),
@@ -1068,7 +1075,7 @@ void main() {
 
   setUpAll(() async {
     style = await StyleReader(
-      uri: 'asset://styles/dark.json',
+      uri: 'asset://assets/styles/dark.json',
       cache: false,
       resolveProvider: (id) async => _StubProvider(),
     ).read();
@@ -1874,7 +1881,7 @@ class _DetailMap extends ConsumerWidget {
           children: [
             VectorTileLayer(
               theme: s.theme,
-              tileProviders: s.tileProviders,
+              tileProviders: s.providers.providers,
               sprites: s.sprites,
               diskCacheMaximumSizeInBytes: 0,
             ),
