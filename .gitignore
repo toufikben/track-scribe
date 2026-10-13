@@ -2,3 +2,8 @@
 /build/
 .dart_tool/
 *.apk
+*.aab
+
+# Release signing material — CI writes these into the workspace, never commits them.
+android/key.properties
+*.jks
