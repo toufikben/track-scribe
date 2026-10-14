@@ -2094,65 +2094,153 @@ data zoom with `dataZoom.clamp(minimumZoom, maximumZoom)`
 (`local_pmtiles_provider.dart:57`) and answers NotFound. The z12 archive is never
 consulted, even though it holds the ground under the user's feet.
 
+**Corrections from reading the vendor source (verify these, do not re-derive):**
+
+1. `VectorTileLayer.tileProviders` is **`TileProviders`**, a class wrapping
+   `Map<String, VectorTileProvider>` keyed by the style's *source id*
+   (`flutter_map_vector_tiles-2.9.1/lib/src/vector_tile_layer.dart:61`,
+   `lib/src/tile_providers.dart:4-9`). It is not a bare Map. Each stacked layer
+   gets `TileProviders({'openmaptiles': providerForThisArchive})`.
+2. The overzoom fallback needs **no new code**: `dataKeyForDisplay` clamps the
+   data zoom into `[minimumZoom, maximumZoom]` and shifts the tile down to the
+   parent (`lib/src/core/tile_zoom.dart:17-32`). A provider whose
+   `maximumZoom` is 12 therefore serves *any* display zoom ≥ 12 by fetching the
+   z12 parent and scaling its sub-region — precisely the behaviour the merged
+   ceiling destroyed.
+3. Stacking is visually safe because `assets/styles/dark.json`'s first layer is
+   `{"id":"background","type":"background","paint":{"background-color":"#101315"}}`
+   — opaque. A deeper layer painted above covers the shallow one wherever it has
+   bytes; where it answers `TileResponseNotFound` it paints nothing and the
+   shallow layer below stays visible. Order the layers **shallow first**.
+4. `cacheKey` must be **distinct per archive**: the interface doc
+   (`lib/src/provider/vector_tile_provider.dart:44-53`) states two providers
+   sharing a key are assumed to serve identical bytes for identical
+   coordinates, including across layers.
+5. **Ruling — ship two layers, not three.** Bundling country + Algiers-wilaya +
+   Khemis-Miliana would decode one tile *per layer* on every screen: 3× the
+   decode on a 2-core phone, which is the exact R105 failure mode this plan is
+   trying to disprove. `kBundledTileNames` becomes the country pack + the
+   Khemis-Miliana pack, and `dz-wilaya-alger-z14.pmtiles` leaves the bundle (it
+   stays a CI artifact; R103's registry makes re-adding it one name). This also
+   cuts ~19.6 MB from the 93.3 MB release APK. The cost if wrong: a tester
+   standing in Algiers sees the coarse country map above z12 — visible, honest,
+   and one asset away from fixed.
+
 **Files:**
 - Modify: `track_scribe/lib/ui/basemap/local_pmtiles_provider.dart`
 - Modify: `track_scribe/lib/ui/basemap/map_style_provider.dart`
 - Modify: `track_scribe/lib/ui/basemap/vector_map_band.dart`
 - Modify: `track_scribe/lib/ui/detail/activity_detail_screen.dart`
 - Modify: `track_scribe/lib/data/tile_store.dart` (register the new pack name)
-- Add: `track_scribe/assets/tiles/dz-khemis-miliana-z14.pmtiles` (from tiles-spike run 38637771170)
+- Add: `track_scribe/assets/tiles/dz-khemis-miliana-z14.pmtiles` (the raw
+  1,792,009-byte pack already downloaded from tiles-spike run 38637771170 — it is
+  on the controller's disk at `Desktop/ts-round/packs/`, hand it to the
+  implementer rather than re-downloading)
+- Remove: `track_scribe/assets/tiles/dz-wilaya-alger-z14.pmtiles` (per ruling 5
+  above: it leaves the bundle, so the APK carries exactly two layers and ~19.6 MB
+  less; it also stops being a test fixture, see Step 1)
 - Test: `track_scribe/test/ui/local_pmtiles_provider_test.dart`, `track_scribe/test/ui/map_style_test.dart`, `track_scribe/test/ui/vector_map_band_test.dart`
 
 **Interfaces:**
-- Consumes: `PmTilesArchive.header.minZoom/maxZoom/minPosition/maxPosition` (the
-  pmtiles package exposes all four; the header stores them as int32 × 1e7 at
-  offsets 100/101/102/106/110/114 — verified by decoding both shipped packs).
+- Consumes: `archive.header` — `Header.minZoom` (u8 @100), `maxZoom` (u8 @101),
+  `minPosition` (int32 e7 **longitude** @102 then **latitude** @106 = the
+  south-west corner) and `maxPosition` (@110/@114 = north-east), verified in
+  `pmtiles-2.2.0/lib/src/header.dart:77-81` + `convert.dart:64-72`. Note the
+  on-disk order is lon-then-lat while `LatLng`'s constructor is lat-then-lon:
+  transposing them is the one editing mistake that would make routing look
+  plausible and fail everywhere (both shipped packs decode to the exact bounds
+  CI printed for them — 2.10,36.13→2.37,36.40 and -8.7049,18.9287→12.0360,38.0183).
 - Produces: `class BundledStyle { final Theme theme; final SpriteAtlas? sprites; final List<TileProviders> layers; }` —
-  one entry per archive, shallowest first, each a single-source map keyed by the
-  style's own source id (`openmaptiles`). `mapStyleProvider` becomes
+  one entry per archive, shallowest first. Each entry is
+  `TileProviders({'<sourceId>': provider})` built from the source id the bundled
+  style actually declares (`dark.json` has exactly one source, `openmaptiles`),
+  never a hardcoded string in two places. `mapStyleProvider` becomes
   `FutureProvider<BundledStyle>`.
-- Produces: `LocalPmTilesProvider({required PmTilesArchive archive, required String cacheKey, List<LatLng> shadowedBy = const []})`
-  — one archive per provider; `maximumZoom` is that archive's own header ceiling;
-  `covers(LatLng)` is true only inside its header bbox and outside every deeper
-  pack's bbox.
+- Produces: `LocalPmTilesProvider({required PmTilesArchive archive, required String cacheKey, List<TileBounds> shadowedBy = const []})`
+  — one archive per provider; `minimumZoom`/`maximumZoom` are that archive's own
+  header values; `TileBounds get bounds` exposes the header bbox;
+  `covers(LatLng)` is true only inside its own bbox and outside every `shadowedBy`
+  box. `TileBounds` is the app's own record — `typedef TileBounds = ({double
+  west, double south, double east, double north})` — built from
+  `archive.header` (`minPosition`/`maxPosition` already expose the four numbers;
+  the header stores them as int32 × 1e7).
+- Routing is a **tile-rectangle ∩ pack-bbox** test, not a corner test: `TileKey`
+  carries only `z/x/y` (`core/tile_key.dart:9-13`) and a z14 tile spans ~2 km, so
+  testing one corner would leave the last column/row of a pack's box unpainted.
+  The exact math to use:
+
+```dart
+  bool _intersectsPack(final TileKey tile) {
+    final n = math.pow(2, tile.z).toDouble();
+    final west = tile.x / n * 360 - 180;
+    final east = (tile.x + 1) / n * 360 - 180;
+    final north = _latAt(tile.y / n);
+    final south = _latAt((tile.y + 1) / n);
+    return !(east < _west || west > _east || north < _south || south > _north);
+  }
+
+  /// Web-Mercator row → latitude (standard inverse mercator).
+  static double _latAt(final double ty) =>
+      180 / math.pi * math.atan(math.sinh(math.pi * (1 - 2 * ty)));
+```
 
 - [ ] **Step 1: RED — the merged provider's single ceiling is the bug**
 
 In `test/ui/local_pmtiles_provider_test.dart`, load both real assets and assert
-the new per-archive shape:
+the new per-archive shape. `openAsset(name)` is the helper this file already
+needs (it currently repeats the `rootBundle.load` + `asUint8List` dance three
+times — extract it as part of this step):
 
 ```dart
 test('each pack answers with its OWN ceiling, so a z14 view outside the deep '
      'pack still gets the shallow one (ر107)', () async {
   final deep = LocalPmTilesProvider(
-    archive: await openAsset('dz-wilaya-alger-z14.pmtiles'),
+    archive: await openAsset('dz-khemis-miliana-z14.pmtiles'),
     cacheKey: 'test-deep',
   );
   final shallow = LocalPmTilesProvider(
     archive: await openAsset('dz-country-z12.pmtiles'),
     cacheKey: 'test-shallow',
-    shadowedBy: const [],
   );
   expect(deep.maximumZoom, 14);
   expect(shallow.maximumZoom, 12,
       reason: 'a merged ceiling of 14 is what made the band an empty rectangle');
 
-  // Khemis Miliana: inside the country bbox, outside the wilaya bbox.
+  // Khemis Miliana: inside the country bbox AND inside the deep pack's box.
   final home = const LatLng(36.2537, 2.2328);
   expect(shallow.covers(home), isTrue);
-  expect(deep.covers(home), isFalse);
+  expect(deep.covers(home), isTrue);
 
-  // Algiers: the deep pack shadows the shallow one, so only it paints.
-  final algiers = const LatLng(36.7525, 3.0420);
+  // ~120 km west, still inside Algeria: the deep pack must refuse it and the
+  // country pack must take it. This is the exact void the device photographed.
+  final elsewhere = const LatLng(36.18, 1.22); // Mascara side
+  expect(deep.covers(elsewhere), isFalse);
+  expect(shallow.covers(elsewhere), isTrue);
+
+  // A shallow provider shadowed by the deep box does not paint under it: the
+  // cost of stacking is one coarse tile per deep tile, and this removes it.
+  // `deep.bounds` is the record read off that archive's OWN header — the test
+  // must route with the same numbers the provider uses, never a literal box.
   final shadowed = LocalPmTilesProvider(
     archive: await openAsset('dz-country-z12.pmtiles'),
     cacheKey: 'test-shallow-shadowed',
-    shadowedBy: const [LatLng(36.7525, 3.0420)], // any point inside the deep bbox
+    shadowedBy: [deep.bounds],
   );
-  expect(shadowed.covers(algiers), isFalse);
-  expect(shadowed.covers(home), isTrue);
+  expect(shadowed.covers(home), isFalse);
+  expect(shadowed.covers(elsewhere), isTrue);
 });
 ```
+
+Also assert the header itself, so a rebuilt pack that moves its box cannot silently
+change the routing: `expect(deep.bounds, equals(const (2.1000, 36.1300, 2.3700,
+36.4000)))` — those are the values decoded from the shipped pack on 2026-10-14.
+
+The existing R103 ordering test (`deepest-pack-first ordering comes from the
+headers, not caller order`) loads `dz-wilaya-alger-z14.pmtiles`, which this task
+removes from the bundle. Migrate it to the Khemis pack rather than deleting it —
+the law it pins (priority comes from the header, not caller order) still needs a
+guard, and both packs still hold a z12 tile over Khemis, so its positive and
+negative halves survive the swap verbatim with only the asset name changed.
 
 Run: `flutter test test/ui/local_pmtiles_provider_test.dart` — must fail to
 compile (`archive:`/`covers`/`shadowedBy` do not exist yet). Capture the failure
@@ -2162,13 +2250,16 @@ before touching lib.
 
 `LocalPmTilesProvider` keeps its body (the try/continue/logging around
 `archive.tile`) and loses the archive loop: `_archives` → one `archive`;
-`minimumZoom`/`maximumZoom` read that archive's header; `load()` returns
-`TileResponseNotFound` when `!covers(tile.latLng)` before touching the directory.
-`covers` is a plain bbox test over `header.minPosition/maxPosition` minus the
-`shadowedBy` boxes. The `List<PmTilesArchive>` constructor and the R103 sort are
-deleted, not kept "for compatibility" — the ordering law moves to
-`mapStyleProvider`, which now builds one provider per archive, shallowest first,
-each shadowed by every deeper pack's bbox centre.
+`minimumZoom`/`maximumZoom`/`bounds` read that archive's header. Two predicates,
+one purpose: `covers(LatLng)` is the point form the tests and the recenter logic
+use, while `load()` short-circuits on the **rectangle** form before touching the
+directory — a z14 tile spans ~2 km, so testing one corner would leave the pack's
+last column and row unpainted (use the exact `_intersectsPack`/`_latAt` math from
+the Interfaces block, not `tile.latLng`, which does not exist on `TileKey`). The
+`List<PmTilesArchive>` constructor and the R103 sort are deleted, not kept "for
+compatibility" — the ordering law moves to `mapStyleProvider`, which now builds
+one provider per archive, shallowest first, each shadowed by **the full bbox of
+every deeper pack** (not its centre point).
 
 - [ ] **Step 3: GREEN the provider test, then RED the style test**
 
@@ -2197,12 +2288,23 @@ source id is bound to a different provider per layer, so each layer paints the
 whole style from one pack, and the bbox rules in Step 2 make exactly one of them
 paint any given tile.
 
-- [ ] **Step 5: Ship the pack around the tester's town**
+- [ ] **Step 5: Swap the shipped pack for the one around the tester's town**
 
-Download `dz-khemis-miliana-z0-14.pmtiles` from tiles-spike run 38637771170, put
-it at `assets/tiles/dz-khemis-miliana-z14.pmtiles`, add the name to
-`kBundledTileNames`. Record the measured bytes and the z14 density it implies
-against the 20.5 MB / 836 km² Alger figure (ر108) in the evidence doc.
+Put `dz-khemis-miliana-z0-14.pmtiles` (raw 1,792,009 B, measured in
+`Desktop/ts-round/packs/`) at `assets/tiles/dz-khemis-miliana-z14.pmtiles`,
+`git rm assets/tiles/dz-wilaya-alger-z14.pmtiles`, and make `kBundledTileNames`
+= country + Khemis.
+
+Then handle the upgrade path, which is where a pack *rename* bites: an installed
+phone has `tiles-v1` set and a 20.5 MB `dz-wilaya-alger-z14.pmtiles` sitting in
+its documents dir. `ensureBundledTiles` already re-copies when a registered name
+is missing, but it never deletes anything, so the orphan would stay forever. Bump
+`flagKey` to `tiles-v2` **and** delete any `*.pmtiles` in the tiles dir that is
+not in `kBundledTileNames` (both in the same pass). Add the two cases to
+`test/data/tile_store_test.dart`: a stale unregistered pack is removed, and a
+missing registered pack is re-copied even when the version flag is already set.
+Record the measured bytes and the z14 density they imply against the 20.5 MB /
+836 km² Alger figure (ر108: 24.5 vs 2.5 MB per 1000 km²) in the evidence doc.
 
 - [ ] **Step 6: Full suite + analyze, commit, push, watch CI**
 
@@ -2216,3 +2318,10 @@ while a session records: (a) with the Khemis Miliana pack → z14 detail; (b) af
 panning ~50 km out of any box → the country pack overzoomed, i.e. coarse map, not
 a void. Both screenshots are the R105 proof, which Task 4 left open because every
 earlier attempt was taken where no pack had data at all.
+
+(c) One more case this task changes on purpose: the band's pre-fix centre is
+Algiers (36.7525, 3.0420), whose z14 pack no longer ships. Before the first GPS
+fix that spot must now render the coarse country map rather than the old detail —
+screenshot it and write the zoom level the tiles actually come from, because
+"the app opens on a town we no longer ship at z14" is a product decision the
+owner should see as a picture, not read as a paragraph.
