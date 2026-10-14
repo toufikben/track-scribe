@@ -25,6 +25,7 @@ class RecordingState {
     this.quality = GpsQuality.none,
     this.storageError,
     this.permissionDenied = false,
+    this.lastActivityId,
   });
 
   final Sport sport;
@@ -47,6 +48,18 @@ class RecordingState {
   /// successful start or a stop clears it.
   final bool permissionDenied;
 
+  /// Task 6's "open what I just recorded": the id of the activity the LAST
+  /// stopped session closed. [stop] drops the engine, and the engine was the
+  /// only object holding that row's identity, so without this the finished
+  /// track would be unreachable until a full list existed.
+  ///
+  /// Non-null ONLY in [RecordingPhase.stopped]: `start()` clears it, so the
+  /// direct `RecordingState(...)` constructions that run DURING a session
+  /// ([_processFix], [_noteStorageFailure]) omit it without ever discarding a
+  /// live value. Widen that rule only by passing it through those builders,
+  /// or a storage error would silently blank the detail affordance.
+  final int? lastActivityId;
+
   RecordingState copyWith({
     Sport? sport,
     RecordingPhase? phase,
@@ -63,6 +76,9 @@ class RecordingState {
     fixCount: fixCount,
     storageError: storageError,
     permissionDenied: permissionDenied ?? this.permissionDenied,
+    // deliberately not a copyWith parameter: only start() and stop() own this
+    // value, and a quality tick or a sport change must not blank it.
+    lastActivityId: lastActivityId,
   );
 }
 
@@ -137,8 +153,14 @@ class RecordingController extends Notifier<RecordingState> {
   Future<void> start() async {
     if (state.phase != RecordingPhase.stopped) return;
     _gate = FixQualityGate(nowNanos: ref.read(gateClockProvider));
-    state = state.copyWith(
+    // Built directly, never through copyWith: copyWith preserves lastActivityId
+    // by design, and a copy here would leave the previous recording's detail
+    // affordance live through the whole new session.
+    state = RecordingState(
+      sport: state.sport,
       phase: RecordingPhase.starting,
+      engine: null,
+      lastActivityId: null, // a new session has no finished activity yet
       quality: GpsQuality.none,
       permissionDenied: false,
     );
@@ -156,6 +178,7 @@ class RecordingController extends Notifier<RecordingState> {
         phase: RecordingPhase.stopped,
         engine: null,
         permissionDenied: true,
+        lastActivityId: null, // this start attempt finished nothing either
       );
       return;
     } on Object {
@@ -169,6 +192,7 @@ class RecordingController extends Notifier<RecordingState> {
         phase: RecordingPhase.stopped,
         engine: null,
         permissionDenied: false,
+        lastActivityId: null, // this start attempt finished nothing either
       );
       return;
     }
@@ -441,6 +465,12 @@ class RecordingController extends Notifier<RecordingState> {
       sport: state.sport,
       phase: RecordingPhase.stopped,
       engine: null,
+      // The row the session just closed, or null when it never made one (ر7
+      // never opened, so nothing was stored and there is no detail to open).
+      // `activityId` was captured above, BEFORE the finish/clear block, so a
+      // resume that kept the previous session's row reports that row rather
+      // than the null this session started from.
+      lastActivityId: activityId,
     );
   }
 

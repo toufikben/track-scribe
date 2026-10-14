@@ -257,6 +257,55 @@ void main() {
     expect(container.read(recordingProvider).phase, RecordingPhase.stopped);
     await src.dispose();
   });
+
+  test('stop sets lastActivityId for the detail affordance; a new start clears it', () async {
+    // Task 6's detail screen has to be opened by id, and the only component
+    // that knows the id of the row it just closed is the session that wrote it.
+    final src = ControlledFixSource()..stepNanos = 2000000000; // 2 s cadence
+    final container = ProviderContainer(
+      overrides: [fixSourceProvider.overrideWithValue(src), ..._dbOverrides],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    src.emitMany(2, accuracyM: 3.0); // ر7 opens
+    await _settle();
+    expect(container.read(recordingProvider).phase, RecordingPhase.recording);
+
+    // 0.0001° latitude ≈ 11.1 m every 2 s ≈ 5.6 m/s: over the run store gate,
+    // so a point is really written and an activity row really exists. Without
+    // a stored point there is no row, and `lastActivityId` would be null for
+    // the wrong reason.
+    var lat = 36.7538;
+    for (var i = 0; i < 3; i++) {
+      lat += 0.0001;
+      src.emit(lat: lat);
+    }
+    await _settle();
+
+    await controller.stop();
+    final stopped = container.read(recordingProvider);
+    expect(stopped.phase, RecordingPhase.stopped);
+    expect(
+      stopped.lastActivityId,
+      isNotNull,
+      reason: 'the finished row must stay reachable after the engine is gone',
+    );
+
+    // The other half: a new session must not leave the affordance pointing at
+    // the previous recording.
+    await controller.start();
+    expect(container.read(recordingProvider).phase, RecordingPhase.starting);
+    expect(
+      container.read(recordingProvider).lastActivityId,
+      isNull,
+      reason: 'a session that has finished nothing yet has no detail to open',
+    );
+
+    await controller.stop();
+    await src.dispose();
+  });
 }
 
 /// Waits for [condition] instead of sleeping a fixed window: the source stamps
