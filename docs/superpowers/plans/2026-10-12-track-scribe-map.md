@@ -2073,3 +2073,146 @@ git push
 - [ ] **Step 4: Stop → «تفاصيل النشاط»**: graded line (visible light→dark variation), start/end dots, direction arrow, elevation strip with a real altitude profile, thickness switch works (screenshots before/after).
 - [ ] **Step 5: Off-pack area** (outside the wilaya, e.g. a drive toward Blida or Boumerdès): country pack takes over seamlessly at z≤12; recording never pauses.
 - [ ] **Step 6: Update the evidence doc** with the screenshots' findings (pass/fail per item, NOT RUN where the phone was unavailable) and commit.
+
+---
+
+## Task 9: لا مستطيل فارغ — سقف لكل حزمة بدل سقفٍ واحد للجميع (ر107)
+
+**Why this task exists (measured, not theorised):** Task 8 Step 5 claimed "outside
+the wilaya the country pack takes over seamlessly at z≤12". The device disproved
+it. The tester's phone sits at 36.2537 N, 2.2328 E (Khemis Miliana), which is
+inside `dz-country-z12.pmtiles` (bbox -8.7049,18.9287 → 12.0360,38.0183) and
+outside `dz-wilaya-alger-z14.pmtiles` (2.8500,36.4200 → 3.6800,37.1000). During a
+live recording the band there is an empty rectangle (screenshot
+`21-band-live.png`: overlays, scale bar and attribution alive; zero tiles).
+
+The cause is one getter. `LocalPmTilesProvider.maximumZoom` returns the MAX over
+all archives (14), and flutter_map_vector_tiles resolves every display zoom to a
+data zoom with `dataZoom.clamp(minimumZoom, maximumZoom)`
+(`lib/src/core/tile_zoom.dart:27`). So at z16 the renderer asks this provider for
+**z14** tiles; `load()` then skips the country archive because `tile.z > archive.maxZoom`
+(`local_pmtiles_provider.dart:57`) and answers NotFound. The z12 archive is never
+consulted, even though it holds the ground under the user's feet.
+
+**Files:**
+- Modify: `track_scribe/lib/ui/basemap/local_pmtiles_provider.dart`
+- Modify: `track_scribe/lib/ui/basemap/map_style_provider.dart`
+- Modify: `track_scribe/lib/ui/basemap/vector_map_band.dart`
+- Modify: `track_scribe/lib/ui/detail/activity_detail_screen.dart`
+- Modify: `track_scribe/lib/data/tile_store.dart` (register the new pack name)
+- Add: `track_scribe/assets/tiles/dz-khemis-miliana-z14.pmtiles` (from tiles-spike run 38637771170)
+- Test: `track_scribe/test/ui/local_pmtiles_provider_test.dart`, `track_scribe/test/ui/map_style_test.dart`, `track_scribe/test/ui/vector_map_band_test.dart`
+
+**Interfaces:**
+- Consumes: `PmTilesArchive.header.minZoom/maxZoom/minPosition/maxPosition` (the
+  pmtiles package exposes all four; the header stores them as int32 × 1e7 at
+  offsets 100/101/102/106/110/114 — verified by decoding both shipped packs).
+- Produces: `class BundledStyle { final Theme theme; final SpriteAtlas? sprites; final List<TileProviders> layers; }` —
+  one entry per archive, shallowest first, each a single-source map keyed by the
+  style's own source id (`openmaptiles`). `mapStyleProvider` becomes
+  `FutureProvider<BundledStyle>`.
+- Produces: `LocalPmTilesProvider({required PmTilesArchive archive, required String cacheKey, List<LatLng> shadowedBy = const []})`
+  — one archive per provider; `maximumZoom` is that archive's own header ceiling;
+  `covers(LatLng)` is true only inside its header bbox and outside every deeper
+  pack's bbox.
+
+- [ ] **Step 1: RED — the merged provider's single ceiling is the bug**
+
+In `test/ui/local_pmtiles_provider_test.dart`, load both real assets and assert
+the new per-archive shape:
+
+```dart
+test('each pack answers with its OWN ceiling, so a z14 view outside the deep '
+     'pack still gets the shallow one (ر107)', () async {
+  final deep = LocalPmTilesProvider(
+    archive: await openAsset('dz-wilaya-alger-z14.pmtiles'),
+    cacheKey: 'test-deep',
+  );
+  final shallow = LocalPmTilesProvider(
+    archive: await openAsset('dz-country-z12.pmtiles'),
+    cacheKey: 'test-shallow',
+    shadowedBy: const [],
+  );
+  expect(deep.maximumZoom, 14);
+  expect(shallow.maximumZoom, 12,
+      reason: 'a merged ceiling of 14 is what made the band an empty rectangle');
+
+  // Khemis Miliana: inside the country bbox, outside the wilaya bbox.
+  final home = const LatLng(36.2537, 2.2328);
+  expect(shallow.covers(home), isTrue);
+  expect(deep.covers(home), isFalse);
+
+  // Algiers: the deep pack shadows the shallow one, so only it paints.
+  final algiers = const LatLng(36.7525, 3.0420);
+  final shadowed = LocalPmTilesProvider(
+    archive: await openAsset('dz-country-z12.pmtiles'),
+    cacheKey: 'test-shallow-shadowed',
+    shadowedBy: const [LatLng(36.7525, 3.0420)], // any point inside the deep bbox
+  );
+  expect(shadowed.covers(algiers), isFalse);
+  expect(shadowed.covers(home), isTrue);
+});
+```
+
+Run: `flutter test test/ui/local_pmtiles_provider_test.dart` — must fail to
+compile (`archive:`/`covers`/`shadowedBy` do not exist yet). Capture the failure
+before touching lib.
+
+- [ ] **Step 2: Implement the one-archive provider**
+
+`LocalPmTilesProvider` keeps its body (the try/continue/logging around
+`archive.tile`) and loses the archive loop: `_archives` → one `archive`;
+`minimumZoom`/`maximumZoom` read that archive's header; `load()` returns
+`TileResponseNotFound` when `!covers(tile.latLng)` before touching the directory.
+`covers` is a plain bbox test over `header.minPosition/maxPosition` minus the
+`shadowedBy` boxes. The `List<PmTilesArchive>` constructor and the R103 sort are
+deleted, not kept "for compatibility" — the ordering law moves to
+`mapStyleProvider`, which now builds one provider per archive, shallowest first,
+each shadowed by every deeper pack's bbox centre.
+
+- [ ] **Step 3: GREEN the provider test, then RED the style test**
+
+`map_style_test.dart`: `mapStyleProvider` must yield `layers.length == 2` for the
+two registered packs, ordered shallow→deep, each map's only key equal to the
+source id the bundled style declares. Then `vector_map_band_test.dart` (which
+stubs the style per R104) asserts the band renders one `VectorTileLayer` per
+entry — the widget test is where a single-layer regression would otherwise hide.
+
+- [ ] **Step 4: Stack the layers in both bands**
+
+```dart
+children: [
+  for (final providers in s.layers)
+    VectorTileLayer(
+      theme: s.theme,
+      tileProviders: providers,
+      sprites: s.sprites,
+      diskCacheMaximumSizeInBytes: 0,
+    ),
+  ...
+]
+```
+`activity_detail_screen.dart` gets the same loop. No style JSON edit: the same
+source id is bound to a different provider per layer, so each layer paints the
+whole style from one pack, and the bbox rules in Step 2 make exactly one of them
+paint any given tile.
+
+- [ ] **Step 5: Ship the pack around the tester's town**
+
+Download `dz-khemis-miliana-z0-14.pmtiles` from tiles-spike run 38637771170, put
+it at `assets/tiles/dz-khemis-miliana-z14.pmtiles`, add the name to
+`kBundledTileNames`. Record the measured bytes and the z14 density it implies
+against the 20.5 MB / 836 km² Alger figure (ر108) in the evidence doc.
+
+- [ ] **Step 6: Full suite + analyze, commit, push, watch CI**
+
+`flutter analyze` and `flutter test` locally (allowed; no local APK build).
+Commit `fix(map): one zoom ceiling per pack so the band is never an empty rectangle (R107)`.
+
+- [ ] **Step 7: Device re-proof — this is also R105's real test**
+
+Install the CI APK. At the phone's actual position the band must now show tiles
+while a session records: (a) with the Khemis Miliana pack → z14 detail; (b) after
+panning ~50 km out of any box → the country pack overzoomed, i.e. coarse map, not
+a void. Both screenshots are the R105 proof, which Task 4 left open because every
+earlier attempt was taken where no pack had data at all.
