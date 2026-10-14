@@ -1,13 +1,20 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/activity_repository.dart';
+import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/database.dart';
+import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/app.dart';
+import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/basemap/vector_map_band.dart';
+import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
+
+import '../support/stub_vector_style.dart';
 
 // R80: a session now reads the resume checkpoint and writes points to sqlite;
 // these tests drive the real app, so they pin the database to memory — never
@@ -26,7 +33,53 @@ Widget _appWithDb(AppDatabase db) => ProviderScope(
   child: const TrackScribeApp(),
 );
 
+/// A throwaway summary so the pushed detail screen mounts without a repository
+/// read: `activityDetailProvider` is overridden, which is the whole reason it is
+/// a family (the detail tests already prove the screen renders from this).
+ActivitySummary _detailSummary(int id) => ActivitySummary(
+  id: id,
+  sport: 'run',
+  startWallMillis: 1700000000000,
+  distanceM: 100,
+  elapsedNanos: 60_000_000_000,
+  fixCount: 2,
+  rejectedCount: 0,
+  mockDetected: false,
+  points: [
+    StoredPoint(
+      lat: 36.75,
+      lon: 3.04,
+      timeNanos: 0,
+      accuracyM: 5,
+      type: WaypointType.normal,
+      altitudeM: 10,
+    ),
+    StoredPoint(
+      lat: 36.7502,
+      lon: 3.04,
+      timeNanos: 1_000_000_000,
+      accuracyM: 5,
+      type: WaypointType.normal,
+      altitudeM: 20,
+    ),
+  ],
+);
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  late Style style;
+
+  // R104: a pushed detail screen watches `mapStyleProvider`; loading the real
+  // bundled style would `rootBundle.load()` inside the fake-async zone and pend
+  // forever, so the stub Style is read ONCE here (outside testWidgets) and
+  // injected per-test — the pattern `detail_screen_test.dart` establishes.
+  setUpAll(() async {
+    style = await loadStubVectorStyle();
+  });
+
+  tearDownAll(() => style.dispose());
+
   testWidgets('layout B: half map + big number panel, RTL, dark', (
     tester,
   ) async {
@@ -223,5 +276,44 @@ void main() {
     expect(find.byKey(const Key('detail-button')), findsNothing);
     await tester.tap(find.text('إيقاف'));
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('the post-stop detail button pushes the activity detail screen', (
+    tester,
+  ) async {
+    // The wire itself — `onPressed` -> Navigator.push -> ActivityDetailScreen —
+    // the only line connecting the two screens. The two overrides are exactly
+    // what the detail tests use to mount that screen safely (stub style loaded
+    // in setUpAll, synthetic summary), so the push runs without awaiting a real
+    // platform channel inside the fake-async zone (R104).
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          mapStyleProvider.overrideWith((ref) => Future.value(style)),
+          activityDetailProvider.overrideWith((ref, id) => Future.value(_detailSummary(id))),
+        ],
+        child: const TrackScribeApp(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('ابدأ التسجيل'));
+    await tester.pump(const Duration(seconds: 6));
+    await tester.tap(find.text('إيقاف'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byKey(const Key('detail-button')), findsOneWidget);
+    expect(find.byType(ActivityDetailScreen), findsNothing);
+
+    await tester.tap(find.byKey(const Key('detail-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ActivityDetailScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

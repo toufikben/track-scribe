@@ -21,6 +21,22 @@ bool hasAltitudeProfile(List<StoredPoint> points) =>
 /// when it is handed an empty profile directly.
 const String kNoAltitudeMessage = 'لا توجد بيانات ارتفاع';
 
+/// A segment is drawable only when BOTH endpoints carry a measured altitude —
+/// the painter's skip rule, shared with [drawableSegmentCount] so the count a
+/// test asserts is exactly what [ElevationStripPainter] draws.
+bool _measuredPair(StoredPoint a, StoredPoint b) => a.altitudeM != null && b.altitudeM != null;
+
+/// How many profile segments the painter will actually stroke: one per
+/// consecutive measured pair, none across a null gap. Pure, so "draws segments
+/// for measured altitudes and skips null gaps" is asserted rather than painted.
+int drawableSegmentCount(List<StoredPoint> points) {
+  var n = 0;
+  for (var i = 1; i < points.length; i++) {
+    if (_measuredPair(points[i - 1], points[i])) n++;
+  }
+  return n;
+}
+
 class ElevationStrip extends StatelessWidget {
   const ElevationStrip({super.key, required this.points});
 
@@ -88,7 +104,7 @@ class ElevationStripPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     for (var i = 1; i < points.length; i++) {
       final a = points[i - 1], b = points[i];
-      if (a.altitudeM == null || b.altitudeM == null) continue;
+      if (!_measuredPair(a, b)) continue;
       // Horizontal distance from the two fixes (haversine, core/geo.dart):
       // a grade is rise over ground distance, and a 0 m run cannot divide.
       final dist = a.distanceTo(b);

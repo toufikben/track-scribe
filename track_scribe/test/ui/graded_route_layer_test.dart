@@ -44,4 +44,22 @@ void main() {
     expect(mid.r, inInclusiveRange(GradedRouteLayer.slowColor.r, Palette.accent.r));
     expect(mid.g, inInclusiveRange(GradedRouteLayer.slowColor.g, Palette.accent.g));
   });
+
+  // The arrow template's tip sits on +x, which in canvas (y-down) coordinates
+  // is screen east = bearing 90. The rendered heading must therefore equal the
+  // compass bearing, not `bearing` added on top of that east base. A unit-level
+  // assertion of the transformed tip for known bearings pins the direction the
+  // way no widget test can (the arrow is painted, never hit-tested).
+  test('direction arrow tip points at the true compass bearing', () {
+    void expectTip(double bearing, double x, double y) {
+      final tip = arrowTipOffset(bearing);
+      expect(tip.dx, closeTo(x, 1e-6), reason: 'tip x at bearing $bearing');
+      expect(tip.dy, closeTo(y, 1e-6), reason: 'tip y at bearing $bearing');
+    }
+
+    expectTip(0, 0, -10); // north  -> up
+    expectTip(90, 10, 0); // east   -> right
+    expectTip(180, 0, 10); // south -> down
+    expectTip(270, -10, 0); // west  -> left
+  });
 }

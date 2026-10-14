@@ -33,6 +33,23 @@ double segmentSpeedMps(StoredPoint a, StoredPoint b) {
 Color speedColor(double t) =>
     Color.lerp(GradedRouteLayer.slowColor, GradedRouteLayer.fastColor, t.clamp(0.0, 1.0))!;
 
+/// The direction arrow's tip length in the canvas template (its `moveTo` leg).
+const double _arrowTipLength = 10;
+
+/// Canvas rotation for a compass [bearingDeg]. The template's tip points along
+/// +x — screen east — so the bearing loses the template's own north-to-east 90°
+/// offset (north renders up, not right). A rotating camera would also need
+/// `camera.rotation` subtracted; this map never rotates.
+double arrowRotationRad(double bearingDeg) => bearingDeg * math.pi / 180 - math.pi / 2;
+
+/// The arrow tip's offset from the arrow origin, in screen coordinates
+/// (y-down), for a compass [bearingDeg]. Pure so the rendered direction is
+/// testable without a [MapCamera].
+Offset arrowTipOffset(double bearingDeg) {
+  final a = arrowRotationRad(bearingDeg);
+  return Offset(_arrowTipLength * math.cos(a), _arrowTipLength * math.sin(a));
+}
+
 /// The finished-activity route: one coloured segment per pair, coloured by
 /// each segment's speed percentile over the whole route, plus a direction
 /// arrow at the midpoint. A flutter_map child — it re-projects via
@@ -116,9 +133,9 @@ class _GradedRoutePainter extends CustomPainter {
     final deg = bearingDeg(from.lat, from.lon, to.lat, to.lon);
     canvas.save();
     canvas.translate(o.dx, o.dy);
-    canvas.rotate(deg * math.pi / 180);
+    canvas.rotate(arrowRotationRad(deg));
     final p = Path()
-      ..moveTo(10, 0)
+      ..moveTo(_arrowTipLength, 0)
       ..lineTo(-6, -7)
       ..lineTo(-6, 7)
       ..close();
