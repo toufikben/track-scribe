@@ -15,7 +15,7 @@ import 'package:track_scribe/theme/palette.dart';
 /// The probes are injectable providers, so this is fully testable with `flutter
 /// test` and never touches a platform channel; production leaves them on the real
 /// `Geolocator` statics.
-class PermissionScreen extends ConsumerWidget {
+class PermissionScreen extends ConsumerStatefulWidget {
   const PermissionScreen({super.key, this.onCompleted});
 
   /// Invoked after onboarding is persisted; [AppGate] uses it to clear the
@@ -23,6 +23,12 @@ class PermissionScreen extends ConsumerWidget {
   /// screen is used standalone (tests).
   final VoidCallback? onCompleted;
 
+  @override
+  ConsumerState<PermissionScreen> createState() => _PermissionScreenState();
+}
+
+class _PermissionScreenState extends ConsumerState<PermissionScreen>
+    with WidgetsBindingObserver {
   static const _granted = 'تم';
   static const _off = 'غير مُفعّل';
   static const _unverifiable = 'لا يمكن التحقق';
@@ -30,7 +36,33 @@ class PermissionScreen extends ConsumerWidget {
       'الإعدادات → إدارة التطبيقات → track_scribe → السماح بالتشغيل التلقائي';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Both verifiable rows can change while the app sits in the background —
+  /// the shade toggle for GPS, the system page for the permission (found on
+  /// the realme: the row kept saying «غير مُفعّل» after GPS was switched on
+  /// from the shade). Re-probe on every return to the foreground; the probes
+  /// are cheap reads, and a stale "off" on a gate is worse than a redundant
+  /// one.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    ref.invalidate(locationPermissionProvider);
+    ref.invalidate(locationServiceProvider);
+    ref.invalidate(notificationPermissionProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final serviceState = ref.watch(locationServiceProvider);
     final permission = ref.watch(locationPermissionProvider).value;
     final notifications = ref.watch(notificationPermissionProvider).value;
@@ -90,7 +122,7 @@ class PermissionScreen extends ConsumerWidget {
         return;
       }
       ref.invalidate(onboardedProvider);
-      onCompleted?.call();
+      widget.onCompleted?.call();
     }
 
     final theme = Theme.of(context);

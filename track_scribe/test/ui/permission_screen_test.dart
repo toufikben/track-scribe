@@ -55,6 +55,7 @@ Future<void> _mount(
   WidgetTester tester, {
   required LocationPermission Function() permission,
   required bool service,
+  bool Function()? serviceProbe,
   required PermissionActions actions,
   bool pendingProbes = false,
   bool failWrites = false,
@@ -79,7 +80,9 @@ Future<void> _mount(
           locationPermissionProvider.overrideWith(
             (_) => Future.value(permission()),
           ),
-        locationServiceProvider.overrideWith((_) => Future.value(service)),
+        locationServiceProvider.overrideWith(
+          (_) => Future.value(serviceProbe == null ? service : serviceProbe()),
+        ),
         permissionActionsProvider.overrideWithValue(actions),
         // The fifth row is covered by its own file; here it is pinned to one
         // known answer so the four-row state counts stay honest.
@@ -440,5 +443,41 @@ void main() {
         reason: '$word must be readable on the surface card',
       );
     }
+  });
+
+  testWidgets('coming back from the system settings re-reads the two GPS probes',
+      (tester) async {
+    // Device-found on the realme: GPS was switched on from the shade while this
+    // screen sat open, and row 2 kept reading «غير مُفعّل» until a full app
+    // restart. The gate must re-probe when the app returns to the foreground.
+    tester.view.physicalSize = const Size(1178, 2556);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+    var service = false;
+    var permissionCalls = 0;
+    await _mount(
+      tester,
+      permission: () {
+        permissionCalls++;
+        return LocationPermission.whileInUse;
+      },
+      service: false,
+      serviceProbe: () => service,
+      actions: _FakeActions().build(),
+    );
+
+    expect(find.text(_off), findsNWidgets(2), reason: 'row 2 (service) + row 5');
+    expect(permissionCalls, 1);
+
+    service = true;
+    final binding = tester.binding;
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pumpAndSettle();
+
+    expect(find.text(_granted), findsNWidgets(2), reason: 'rows 1 and 2');
+    expect(find.text(_off), findsOneWidget, reason: 'row 5 only');
+    expect(permissionCalls, 2, reason: 'the permission probe re-reads as well');
   });
 }
