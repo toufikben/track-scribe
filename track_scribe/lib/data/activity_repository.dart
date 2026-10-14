@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/source/gps_quality.dart';
@@ -190,6 +191,60 @@ class ActivityRepository {
       ..where(_db.trackPoints.activityId.equals(activityId));
     final row = await q.getSingle();
     return row.read(count) ?? 0;
+  }
+
+  /// The detail screen's read: one activity's row plus every point in
+  /// engine/write order (rowid order — R78 guarantees append order = id order).
+  /// NULL accuracy reads back as the R76 sentinel, exactly like [loadResume].
+  ///
+  /// `ORDER BY id` and NOT `ORDER BY timeNanos`: R79 lets a resumed session's
+  /// on-screen clock restart, so `timeNanos` is monotonic time relative to
+  /// whichever process wrote the point and is meaningless across a resume,
+  /// while the append chain (_enqueueStoredPoints) is what actually defines
+  /// engine order. Sorting by time would reorder a track that was recorded
+  /// correctly, and a polyline is only honest in the order it was walked.
+  ///
+  /// The totals carry no `?? 0`: every one of them has a schema default, so
+  /// drift types them non-nullable and a null-aware read here would be dead
+  /// code the analyzer rejects — the default is enforced in the table, not at
+  /// the reader.
+  Future<ActivitySummary?> loadActivityWithPoints(int activityId) async {
+    final row = await (_db.select(_db.activities)
+          ..where((t) => t.id.equals(activityId))
+          ..limit(1))
+        .getSingleOrNull();
+    if (row == null) return null;
+    final pts = await (_db.select(_db.trackPoints)
+          ..where((t) => t.activityId.equals(activityId))
+          ..orderBy([(t) => OrderingTerm.asc(t.id)]))
+        .get();
+    return ActivitySummary(
+      id: row.id,
+      sport: row.sport,
+      startWallMillis: row.startWallMillis,
+      distanceM: row.distanceM,
+      elapsedNanos: row.elapsedNanos,
+      fixCount: row.fixCount,
+      rejectedCount: row.rejectedCount,
+      mockDetected: row.mockDetected,
+      points: [
+        for (final p in pts)
+          StoredPoint(
+            lat: p.lat,
+            lon: p.lon,
+            timeNanos: p.timeNanos,
+            // R76 read side: the sentinel is restored, never a stored number
+            // and never a null — `StoredPoint.accuracyM` is non-nullable so
+            // every consumer (aggregations, drift, the map) must skip this
+            // value instead of averaging an infinity into a real 1σ.
+            accuracyM: p.accuracyM ?? unmeasuredAccuracyM,
+            type: WaypointType.values.byName(p.waypointType),
+            altitudeM: p.altGnss,
+            speedMps: p.speedMps,
+            bearingDeg: p.bearingDeg,
+          ),
+      ],
+    );
   }
 
   /// R86: read one persisted on/off flag; an unwritten key returns [defaultValue].
