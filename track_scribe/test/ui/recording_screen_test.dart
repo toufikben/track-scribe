@@ -185,4 +185,43 @@ void main() {
     await tester.tap(find.text('إيقاف'));
     await tester.pump(const Duration(milliseconds: 100));
   });
+
+  testWidgets('the post-stop «تفاصيل النشاط» button exists only for a session '
+      'that stored a row', (tester) async {
+    // Task 5's `lastActivityId` is the whole affordance: no button before a
+    // recording has ever closed a row, one button the moment it does.
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(_appWithDb(db));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(
+      find.text('تفاصيل النشاط'),
+      findsNothing,
+      reason: 'a stopped app whose session never made a row has nothing to open',
+    );
+
+    await tester.tap(find.text('ابدأ التسجيل'));
+    // ~0.14 m per fake 100 ms tick at 1.4 m/s, and the ر3 gate wants 6 m
+    // (max(3, 2 × 3 m accuracy)) — 6 s of fake time is what lets one point be
+    // stored, so the session really does close an activity row.
+    await tester.pump(const Duration(seconds: 6));
+    expect(find.text('إيقاف'), findsOneWidget);
+    await tester.tap(find.text('إيقاف'));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.byKey(const Key('detail-button')), findsOneWidget);
+    expect(find.text('تفاصيل النشاط'), findsOneWidget);
+
+    // And it goes away when a new session starts: the button belongs to the
+    // activity that FINISHED, never to the live one (start clears the id).
+    await tester.tap(find.text('ابدأ التسجيل'));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const Key('detail-button')), findsNothing);
+    await tester.tap(find.text('إيقاف'));
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 }

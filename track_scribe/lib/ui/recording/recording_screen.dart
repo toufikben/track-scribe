@@ -4,6 +4,7 @@ import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/vector_map_band.dart';
+import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/sport_chips.dart';
 import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
@@ -82,6 +83,30 @@ class RecordingScreen extends ConsumerWidget {
                         onStart: controller.start,
                         onStop: controller.stop,
                       ),
+                      // Task 5 left `lastActivityId` as the only handle on the
+                      // row the session just closed; this is the affordance that
+                      // makes it mean something. It shows ONLY in `stopped` with
+                      // a row behind it — a session ر7 never opened made no row,
+                      // so there is nothing to open and nothing appears.
+                      if (s.lastActivityId != null &&
+                          s.phase == RecordingPhase.stopped)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: OutlinedButton.icon(
+                            key: const Key('detail-button'),
+                            onPressed: () {
+                              final id = s.lastActivityId!;
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      ActivityDetailScreen(activityId: id),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.route_outlined, size: 18),
+                            label: const Text('تفاصيل النشاط'),
+                          ),
+                        ),
                     ],
                   ),
                 ),

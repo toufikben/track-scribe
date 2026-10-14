@@ -219,7 +219,7 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
             ),
           ),
         ),
-        const _AttributionStrip(),
+        const AttributionStrip(),
       ],
     );
   }
@@ -319,8 +319,10 @@ class _ControlButton extends StatelessWidget {
 }
 
 /// ODbL/CC-BY attribution — legally required and never dismissable.
-class _AttributionStrip extends StatelessWidget {
-  const _AttributionStrip();
+/// Public because the plan's global constraint puts it on every view that
+/// shows the bundled map, the finished-activity detail screen included.
+class AttributionStrip extends StatelessWidget {
+  const AttributionStrip({super.key});
 
   @override
   Widget build(BuildContext context) => Container(
