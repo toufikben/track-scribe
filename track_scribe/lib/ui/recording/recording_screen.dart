@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
-import 'package:track_scribe/ui/basemap/grid_basemap.dart';
+import 'package:track_scribe/ui/basemap/vector_map_band.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/sport_chips.dart';
 import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
@@ -40,8 +40,11 @@ class RecordingScreen extends ConsumerWidget {
                 child: Stack(
                   children: [
                     Positioned.fill(
-                      child: GridBasemap(
+                      child: VectorMapBand(
                         points: s.engine?.storedPoints ?? const <StoredPoint>[],
+                        current: (s.engine?.storedPoints.isNotEmpty ?? false)
+                            ? s.engine!.storedPoints.last
+                            : null,
                       ),
                     ),
                     const Positioned(top: 12, right: 12, child: SportChips()),

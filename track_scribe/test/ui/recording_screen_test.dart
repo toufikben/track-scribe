@@ -7,7 +7,7 @@ import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/app.dart';
-import 'package:track_scribe/ui/basemap/grid_basemap.dart';
+import 'package:track_scribe/ui/basemap/vector_map_band.dart';
 
 // R80: a session now reads the resume checkpoint and writes points to sqlite;
 // these tests drive the real app, so they pin the database to memory — never
@@ -56,13 +56,14 @@ void main() {
     );
 
     // Layout contract (spec §5): the map takes 40 % of the body Column and
-    // the panel 60 % (Expanded flex 4 / 6).
+    // the panel 60 % (Expanded flex 4 / 6). R104: the band is now
+    // VectorMapBand — its rect is the flex-4 area, attribution included.
     final bodyColumn = tester
-        .element(find.byType(GridBasemap))
+        .element(find.byType(VectorMapBand))
         .findAncestorWidgetOfExactType<Column>();
     expect(bodyColumn, isNotNull);
     final columnHeight = tester.getSize(find.byWidget(bodyColumn!)).height;
-    final mapHeight = tester.getSize(find.byType(GridBasemap)).height;
+    final mapHeight = tester.getSize(find.byType(VectorMapBand)).height;
     expect(mapHeight, closeTo(columnHeight * 0.4, 1.0));
 
     // Before start the counters render real formatted values, not

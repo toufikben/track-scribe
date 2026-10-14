@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
@@ -10,9 +11,13 @@ import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/ui/app.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
+import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/basemap/route_painter.dart';
+import 'package:track_scribe/ui/basemap/vector_map_band.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/sport_chips.dart';
+
+import '../support/stub_vector_style.dart';
 
 const _p1 = StoredPoint(
   lat: 36.7538,
@@ -44,6 +49,18 @@ Future<AppDatabase> _seededDb() async {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  // R104: loaded outside any fake-async zone so the asset read can actually
+  // complete; the map-branch collision test overrides mapStyleProvider with it.
+  late Style style;
+
+  setUpAll(() async {
+    style = await loadStubVectorStyle();
+  });
+
+  tearDownAll(() => style.dispose());
+
   test('rejected points split out of the polyline but stay in the trail', () {
     final painter = RoutePainter(const [_p1, _rejected, _p2]);
     expect(painter.polylinePoints.length, 2);
@@ -255,9 +272,17 @@ void main() {
       addTearDown(tester.view.reset);
       final db = await _seededDb();
       addTearDown(db.close);
+      // R104: an unmocked platform channel pends forever under testWidgets,
+      // so the band must render through the stub style — the map branch,
+      // not the fallback, is what the corner rects are measured on. The style
+      // is loaded in setUpAll: rootBundle.load inside a fake-async zone would
+      // pend exactly the same way (measured: a 10-minute test timeout).
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [appDatabaseProvider.overrideWithValue(db)],
+          overrides: [
+            appDatabaseProvider.overrideWithValue(db),
+            mapStyleProvider.overrideWith((ref) => Future.value(style)),
+          ],
           child: const TrackScribeApp(),
         ),
       );
@@ -269,7 +294,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
 
       expect(tester.takeException(), isNull);
-      final map = tester.getRect(find.byType(GridBasemap));
+      final map = tester.getRect(find.byType(VectorMapBand));
       final north = tester.getRect(find.byKey(const Key('basemap-north')));
       final scale = tester.getRect(find.byKey(const Key('basemap-scale')));
       final chips = tester.getRect(find.byType(SportChips));

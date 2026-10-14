@@ -1,9 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/route_painter.dart';
+import 'package:track_scribe/ui/basemap/scale_bar.dart';
 
 /// The generated dark basemap (spec §6): a 40 px grid + the route polyline +
 /// a north indicator and a scale bar, fully local with zero tile licences.
@@ -45,7 +44,7 @@ class GridBasemap extends StatelessWidget {
             Positioned(
               bottom: 8,
               right: 8,
-              child: _ScaleBar(
+              child: ScaleBar(
                 key: const Key('basemap-scale'),
                 metresPerPixel: painter.metresPerPixel(size),
               ),
@@ -55,46 +54,4 @@ class GridBasemap extends StatelessWidget {
       },
     );
   }
-}
-
-class _ScaleBar extends StatelessWidget {
-  const _ScaleBar({super.key, required this.metresPerPixel});
-
-  final double metresPerPixel;
-
-  @override
-  Widget build(BuildContext context) {
-    // No route, no projection, no scale — the bar only exists when it can
-    // tell the truth.
-    if (metresPerPixel <= 0) return const SizedBox.shrink();
-    final labelMetres = _scaleLabelMetres(metresPerPixel);
-    // A label under one metre means the trail spans centimetres: a single
-    // point, or a ر6 standing-still trail of identical positions. Printing it
-    // at this precision renders "0,0 م" — a fabricated figure — so the bar
-    // hides instead.
-    if (labelMetres < 1) return const SizedBox.shrink();
-    final barPx = labelMetres / metresPerPixel;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '${labelMetres.toStringAsFixed(0)} م',
-          style: const TextStyle(fontSize: 10, color: Palette.textSecondary),
-        ),
-        const SizedBox(height: 2),
-        Container(width: barPx, height: 2, color: Palette.textSecondary),
-      ],
-    );
-  }
-}
-
-/// The smallest 1-2-5 value worth at least 40 px of the projection, so the
-/// label stays exact and the bar lands in [40, 80) px by construction.
-double _scaleLabelMetres(double metresPerPixel) {
-  final target = metresPerPixel * 40;
-  final base = math.pow(10.0, (math.log(target) / math.ln10).floor()).toDouble();
-  for (final m in const [1.0, 2.0, 5.0, 10.0]) {
-    if (base * m >= target) return base * m;
-  }
-  return base * 10;
 }
