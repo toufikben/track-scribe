@@ -23,6 +23,8 @@
 - Attribution row, always visible and never dismissable, exactly: `© OpenStreetMap contributors · © OpenMapTiles · Style: OpenFreeMap (MIT)`.
 - Zero runtime network: `StyleReader(cache: false)`, `asset://` URI, `resolveProvider`; the custom provider never touches http; `cacheBytesToDisk => false`.
 - **R104 — widget tests cannot reach a `FutureProvider` branch by `await`ing real work inside `testWidgets`.** Both `getApplicationDocumentsDirectory()` (unmocked platform channel) and `rootBundle.load()` (`flutter/assets`) are dispatched to the delegate, whose reply needs the real event loop that `AutomatedTestWidgetsFlutterBinding` never runs, so the future pends and the test dies at the 10-minute `TimeoutException` ceiling — not at an assertion. Any test that must render the loaded/data branch loads its `Style` in `setUpAll` (via `test/support/stub_vector_style.dart`) and overrides `mapStyleProvider`. The error branch needs no such trick — an overridden provider that throws completes immediately, in fake time, which is how `vector_map_band_test` pins the fallback. The bundled style deliberately KEEPS the upstream `"url":"https://tiles.openfreemap.org/planet"` (MIT attribution fidelity), and `style_reader.dart:276-277` short-circuits it only when `resolveProvider` returns a provider for that exact source id — so **every** `StyleReader` call site must pass `resolveProvider` with id `openmaptiles`. A map test that wires a wrong id is a bug that would dial out; `test/ui/map_style_test.dart` keeps a no-network client so a mis-wire fails loudly instead.
+- **R105 — a live map must not recenter on every fix.** `MapController.move`/`rotate` restart the vector tile fetch, and on a two-core phone decoding the visible tiles takes longer than the gap between fixes (or between timer rebuilds), so a follow-every-fix band paints NOTHING for the whole session — measured on the realme: streets while idle, flat once recording started, back within seconds of a finger pan. The rule lives in `lib/ui/basemap/follow_policy.dart::shouldRecenter` (pure, unit-tested): move only past 60 % of the half band's shorter side, measured in metres with `haversineMeters`; rotations need a >3° change. Task 6's replay band and Task 7's export renderer MUST reuse it — a replay camera that chases every sample has the same failure.
+- **R106 — a verified permission row must re-probe on resume.** GPS and the permission are changed outside the app (shade toggle, system Settings), so a cached `FutureProvider` reads as a lie when the user returns: measured with `gps provider: enabled=true` while row 2 still said «غير مُفعّل». Any screen that gates on a platform fact registers a `WidgetsBindingObserver` and invalidates its probes on `AppLifecycleState.resumed`.
 - Recording never blocks on the map: while the style loads, or if it fails, the band shows `Palette.bg` / `GridBasemap` respectively — the route polyline stays visible in the fallback.
 - Map labels use the system font (renderer ignores `glyphs`); Arabic reaches the map via Android fallback; UI stays Arabic-first RTL (R23 explicit `Directionality`); no flutter_localizations; IBM Plex Sans Arabic assets unchanged.
 - Contrast law unchanged: `Palette` tokens and `test/theme/palette_contrast_test.dart` are laws; `danger` stays reserved for stop. Map internals (grid/gradient/water) are decoration — no contrast claims.
@@ -759,10 +761,27 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
       if (p.type != WaypointType.rejected) LatLng(p.lat, p.lon),
   ];
 
+  /// R105 (device-found): never move for a fix that still lands inside the
+  /// band. Each programmatic move restarts the vector tile fetch, and on a
+  /// two-core phone the decode is slower than the gap between fixes, so
+  /// chasing every fix paints nothing for the whole session.
   void _moveTo(StoredPoint p) {
-    _map.move(LatLng(p.lat, p.lon), _map.camera.zoom);
+    if (!_mapReady) return;
+    final cam = _map.camera;
+    final target = LatLng(p.lat, p.lon);
+    if (shouldRecenter(
+      center: cam.center,
+      target: target,
+      metresPerPixel: _metresPerPixel(),
+      bandShortSidePx: math.min(cam.size.width, cam.size.height),
+    )) {
+      _map.move(target, cam.zoom);
+    }
     if (_heading && p.bearingDeg != null) {
-      _map.rotate(-p.bearingDeg!);
+      final wanted = -p.bearingDeg!;
+      if (_signedDeg(wanted - cam.rotation).abs() > _headingEpsilonDeg) {
+        _map.rotate(wanted);
+      }
     }
   }
 
