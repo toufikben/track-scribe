@@ -9,6 +9,7 @@ import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
+import 'package:track_scribe/ui/basemap/route_painter.dart';
 import 'package:track_scribe/ui/basemap/vector_map_band.dart';
 
 import '../support/stub_vector_style.dart';
@@ -87,6 +88,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('basemap-canvas')), findsOneWidget);
     expect(find.textContaining('OpenStreetMap contributors'), findsOneWidget);
+    // The law is "the route stays visible in the fallback", so prove the
+    // fallback canvas actually has a polyline to paint — not just that a
+    // GridBasemap exists with a field forwarded to it.
+    final canvas = tester.widget<CustomPaint>(
+      find.byKey(const Key('basemap-canvas')),
+    );
+    final painter = canvas.painter;
+    expect(painter, isA<RoutePainter>());
+    expect(
+      (painter as RoutePainter).hasPolyline,
+      isTrue,
+      reason: 'both points must reach the fallback polyline',
+    );
   });
 
   testWidgets('while the style loads: flat Palette.bg, no map, attribution stays', (
@@ -112,12 +126,28 @@ void main() {
     await tester.pump();
     expect(find.byType(FlutterMap), findsNothing);
     expect(find.byType(GridBasemap), findsNothing);
+    // The law is about the MAP AREA, not "any ColoredBox with that colour":
+    // the attribution strip is a Container(color: Palette.bg), and Container
+    // builds a ColoredBox internally — so a bare predicate would pass even if
+    // the loading branch painted something else. Read the band's own child.
+    final bandColumn = tester.widget<Column>(
+      find
+          .descendant(
+            of: find.byType(VectorMapBand),
+            matching: find.byType(Column),
+          )
+          .first,
+    );
+    final mapArea = (bandColumn.children.first as Expanded).child;
     expect(
-      find.byWidgetPredicate(
-        (w) => w is ColoredBox && w.color == Palette.bg,
-      ),
-      findsWidgets,
-      reason: 'the loading branch must be the flat bg (spec §12)',
+      mapArea,
+      isA<ColoredBox>(),
+      reason: 'the loading branch must be a flat box, spec §12',
+    );
+    expect(
+      (mapArea as ColoredBox).color,
+      Palette.bg,
+      reason: 'the loading branch must be exactly Palette.bg',
     );
     expect(find.textContaining('OpenStreetMap contributors'), findsOneWidget);
   });
