@@ -31,6 +31,14 @@ class Palette {
   /// `RoutePainter._grid`, which is why this value is not in the contrast test).
   static const Color gridOverlay = Color(0x14F4F7F2);
 
+  /// The dim end of both map ramps: the slowest segment of the graded route and
+  /// a flat grade on the elevation strip (spec §12.1 «تدرّج حسب السرعة ... فاتح
+  /// → داكن»). The bright end of both is [accent]. Decorative like
+  /// [gridOverlay] — the contrast law does not bind it — but the no-raw-hex-in-
+  /// a-widget-file rule does, so the hex lives here, not in
+  /// `graded_route_layer.dart` / `elevation_strip.dart`.
+  static const Color rampDim = Color(0xFF4D6112);
+
   /// Stop action ONLY. #E03131 fails 4.5:1 for white text, so danger is darkened.
   ///
   /// Usage rule (spec §5): `danger` is a **background** colour, and the only
