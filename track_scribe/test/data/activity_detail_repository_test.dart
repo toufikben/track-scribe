@@ -21,9 +21,12 @@ void main() {
     final id = await repo.insertActivity(
       uuid: 'act-test', sport: 'run', startWallMillis: 1234,
     );
+    // timeNanos deliberately runs backwards against write order: if the two
+    // rose together, `ORDER BY timeNanos` would pass every assertion below and
+    // the R78 rowid guard would be untested.
     final pts = [
-      StoredPoint(lat: 36.75, lon: 3.04, timeNanos: 10, accuracyM: 5, type: WaypointType.normal),
-      StoredPoint(lat: 36.751, lon: 3.041, timeNanos: 20, accuracyM: unmeasuredAccuracyM, type: WaypointType.idle),
+      StoredPoint(lat: 36.75, lon: 3.04, timeNanos: 20, accuracyM: 5, type: WaypointType.normal),
+      StoredPoint(lat: 36.751, lon: 3.041, timeNanos: 10, accuracyM: unmeasuredAccuracyM, type: WaypointType.idle),
     ];
     await repo.appendPoints(id, pts);
     await repo.finishActivity(
@@ -43,6 +46,8 @@ void main() {
     expect(s.distanceM, 42.5);
     expect(s.elapsedNanos, 100);
     expect(s.points.length, 2);
+    expect(s.points.first.timeNanos, 20); // written first => rowid first
+    expect(s.points.last.timeNanos, 10);
     expect(s.points.first.type, WaypointType.normal);
     expect(s.points.last.accuracyM, unmeasuredAccuracyM); // R76 round-trip
     expect(s.points.last.type, WaypointType.idle);
