@@ -23,6 +23,14 @@ on:
         description: 'Zoom ceiling for the country build (start at 12: it must fit the artifact quota)'
         required: false
         default: '12'
+      local_bounds:
+        description: 'west,south,east,north for one extra z0-14 pack (blank = skip it)'
+        required: false
+        default: ''
+      local_name:
+        description: 'File stem for that extra pack, e.g. dz-khemis-miliana'
+        required: false
+        default: 'local-area'
 
 env:
   PLANETILER_VERSION: v0.10.2        # Apache-2.0
@@ -118,7 +126,34 @@ jobs:
           tail -60 wilaya-build.log
           df -h "$RUNNER_TEMP" | tail -1
 
+      # The province-scale pack above turned out to be the wrong unit: 836 km²
+      # at z14 already costs 20.5 MB, so a whole wilaya like Aïn Defla (~8 000
+      # km²) would be ~200 MB and no APK can carry it. What an APK can carry is
+      # a ~700 km² box around the town the tester actually stands in, so the
+      # box is a dispatch input rather than another hardcoded constant.
+      - name: Build the extra local z0-14 pack (optional)
+        if: ${{ inputs.local_bounds != '' }}
+        id: local
+        env:
+          LOCAL_BOUNDS: ${{ inputs.local_bounds }}
+          LOCAL_NAME: ${{ inputs.local_name }}
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          start=$SECONDS
+          java -Xmx8g -jar planetiler.jar \
+            --osm-path="$AREA.osm.pbf" \
+            --output="$LOCAL_NAME-z0-14.pmtiles" \
+            --maxzoom=14 \
+            --bounds="$LOCAL_BOUNDS" \
+            --threads=4 --force > local-build.log 2>&1
+          echo "seconds=$SECONDS" >> "$GITHUB_OUTPUT"
+          echo "bytes=$(stat -c %s $LOCAL_NAME-z0-14.pmtiles)" >> "$GITHUB_OUTPUT"
+          tail -20 local-build.log
+
       - name: Measure the packs (tile counts and bounds, not just bytes)
+        env:
+          LOCAL_PACK: ${{ inputs.local_bounds != '' && format('{0}-z0-14.pmtiles', inputs.local_name) || '' }}
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP"
@@ -141,12 +176,21 @@ jobs:
             END { for (l in lb) printf "%10.1f MB  %s\n", lb[l]/1048576, l }' | sort -rn | head -12
           echo "=== wilaya pack ==="
           ./pmtiles show alger-wilaya-z0-14.pmtiles | head -25
+          if [ -n "$LOCAL_PACK" ]; then
+            echo "=== local pack ($LOCAL_PACK) ==="
+            ./pmtiles show "$LOCAL_PACK" | head -25
+          fi
 
       - name: Report
+        env:
+          LOCAL_NAME: ${{ inputs.local_name }}
+          LOCAL_BYTES: ${{ steps.local.outputs.bytes }}
+          LOCAL_SECONDS: ${{ steps.local.outputs.seconds }}
         run: |
           echo "profile sources downloaded:      ${{ steps.sources.outputs.seconds }} s"
           echo "country z0-${{ inputs.max_zoom }}: ${{ steps.country.outputs.bytes }} bytes in ${{ steps.country.outputs.seconds }} s"
           echo "alger wilaya z0-14:              ${{ steps.wilaya.outputs.bytes }} bytes in ${{ steps.wilaya.outputs.seconds }} s"
+          echo "local pack ($LOCAL_NAME):        $LOCAL_BYTES bytes in $LOCAL_SECONDS s"
           echo "artifact quota is 500 MB — the country pack is uploaded only if it fits."
           df -h "$RUNNER_TEMP" | tail -1
 
@@ -155,6 +199,14 @@ jobs:
         with:
           name: alger-wilaya-z0-14
           path: ${{ runner.temp }}/alger-wilaya-z0-14.pmtiles
+          retention-days: 7
+
+      - name: Upload the local pack (the box around the tester's phone)
+        if: ${{ inputs.local_bounds != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.local_name }}-z0-14
+          path: ${{ runner.temp }}/${{ inputs.local_name }}-z0-14.pmtiles
           retention-days: 7
 
       - name: Upload the build logs (the raw evidence behind the two numbers)
@@ -166,6 +218,7 @@ jobs:
             ${{ runner.temp }}/sources-download.log
             ${{ runner.temp }}/country-build.log
             ${{ runner.temp }}/wilaya-build.log
+            ${{ runner.temp }}/local-build.log
             ${{ runner.temp }}/algeria-z0-${{ inputs.max_zoom }}.pmtiles.layerstats.tsv.gz
           retention-days: 30
 
