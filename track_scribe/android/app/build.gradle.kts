@@ -15,6 +15,10 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) FileInputStream(file).use { load(it) }
 }
 
+// Written by CI from the DEBUG_KEYSTORE_B64 secret; absent on a fresh clone, which
+// leaves the debug build on AGP's own generated key.
+val sharedDebugKeystore = file("shared-debug.jks")
+
 android {
     namespace = "dev.toufik.track_scribe"
     compileSdk = flutter.compileSdkVersion
@@ -48,6 +52,19 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+        // AGP generates a throwaway debug key per runner, so every CI debug APK carried
+        // a different signature and the phone loop had to uninstall the app - deleting
+        // the recordings with it - before installing the next one. ~/.android was
+        // measured not to be honoured (CI restored the key there, the APK still got a
+        // fresh cert), so the shared key is named here instead.
+        if (sharedDebugKeystore.exists()) {
+            getByName("debug") {
+                storeFile = sharedDebugKeystore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
             }
         }
     }

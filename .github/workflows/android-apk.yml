@@ -21,9 +21,9 @@ jobs:
       - name: Restore the shared debug keystore
         # AGP generates a throwaway debug key per runner, so every CI debug APK used
         # to carry a different signature and the phone test loop had to uninstall -
-        # wiping the recordings and the pmtiles packs - before installing the next one.
-        # This keystore is the one on the development machine, so debug builds
-        # reinstall over each other and keep their data.
+        # wiping the recordings - before installing the next one. android/app/build.gradle.kts
+        # signs debug with this file when it exists, so debug builds reinstall over each
+        # other and keep their data. It is the keystore the development machine uses.
         env:
           DEBUG_KEYSTORE_B64: ${{ secrets.DEBUG_KEYSTORE_B64 }}
         run: |
@@ -32,9 +32,8 @@ jobs:
             echo "DEBUG_KEYSTORE_B64 is not set - the debug APK will be signed with a throwaway key."
             exit 0
           fi
-          mkdir -p ~/.android
-          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 --decode > ~/.android/debug.keystore
-          keytool -list -keystore ~/.android/debug.keystore -storepass android \
+          printf '%s' "$DEBUG_KEYSTORE_B64" | base64 --decode > android/app/shared-debug.jks
+          keytool -list -keystore android/app/shared-debug.jks -storepass android \
             -alias androiddebugkey | grep -i 'Fingerprint'
       - run: flutter pub get
       - run: flutter analyze
