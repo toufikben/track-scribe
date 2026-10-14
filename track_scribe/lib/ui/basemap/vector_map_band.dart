@@ -7,9 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/theme/palette.dart';
+import 'package:track_scribe/ui/basemap/follow_policy.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/basemap/scale_bar.dart';
+
+/// Degrees of heading change that justify a map redraw. GPS bearing jitters by
+/// a degree or two at rest, and a redraw is as expensive as a camera move.
+const double _headingEpsilonDeg = 3;
 
 /// The recording map band (spec §12.1): real offline vector map + live route
 /// + position marker with 1σ accuracy halo + follow/recenter + north/heading
@@ -42,13 +47,33 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
       if (p.type != WaypointType.rejected) LatLng(p.lat, p.lon),
   ];
 
+  /// Follow the fix, but only as far as the band's own tolerance allows
+  /// ([shouldRecenter]) — and only turn for a heading change worth a redraw.
+  /// Every move and every rotation restarts the vector tile fetch, so chasing
+  /// each fix blanked the map on the realme for the whole session.
   void _moveTo(StoredPoint p) {
     if (!_mapReady) return;
-    _map.move(LatLng(p.lat, p.lon), _map.camera.zoom);
+    final cam = _map.camera;
+    final target = LatLng(p.lat, p.lon);
+    if (shouldRecenter(
+      center: cam.center,
+      target: target,
+      metresPerPixel: _metresPerPixel(),
+      bandShortSidePx: math.min(cam.size.width, cam.size.height),
+    )) {
+      _map.move(target, cam.zoom);
+    }
     if (_heading && p.bearingDeg != null) {
-      _map.rotate(-p.bearingDeg!);
+      final wanted = -p.bearingDeg!;
+      if (_signedDeg(wanted - cam.rotation).abs() > _headingEpsilonDeg) {
+        _map.rotate(wanted);
+      }
     }
   }
+
+  /// Fold a degree delta into (-180, 180] so a heading across the wrap is not
+  /// read as a full turn.
+  static double _signedDeg(double deg) => (deg + 180) % 360 - 180;
 
   /// Metres per screen pixel of Web Mercator at [lat]/[zoom] (256 px tiles,
   /// logical pixels) — the scale bar's one honest input on a real map.
