@@ -2107,11 +2107,26 @@ consulted, even though it holds the ground under the user's feet.
    `maximumZoom` is 12 therefore serves *any* display zoom ≥ 12 by fetching the
    z12 parent and scaling its sub-region — precisely the behaviour the merged
    ceiling destroyed.
-3. Stacking is visually safe because `assets/styles/dark.json`'s first layer is
-   `{"id":"background","type":"background","paint":{"background-color":"#101315"}}`
-   — opaque. A deeper layer painted above covers the shallow one wherever it has
-   bytes; where it answers `TileResponseNotFound` it paints nothing and the
-   shallow layer below stays visible. Order the layers **shallow first**.
+3. Stacking is visually safe **only if the stacked theme carries no
+   `background` layer** — R114 corrects this ruling, whose original wording
+   asserted the opposite and was false. `assets/styles/dark.json`'s first layer is
+   `{"id":"background","type":"background","paint":{"background-color":"#101315"}}`,
+   and a `background` layer is painted for **every** tile the layer is asked to
+   rasterize — including one whose pack answered `TileResponseNotFound`: that
+   answer still becomes a real, empty tile which reaches the rasterizer, where
+   `BackgroundThemeLayer` draws its rect regardless of `data` and sets
+   `painted = true` (`tile_rasterizer.dart:122-131`). So the TOP (deep) layer
+   bakes an opaque `#101315` image over the shallow one everywhere outside its
+   own box — the flat void R107 exists to kill. A theme with no `background`
+   layer paints nothing for a refused tile (`painted == false` → `rasterize`
+   returns null → no `ui.Image` allocated), and the shallow layer below stays
+   visible. `BundledStyle`'s constructor therefore strips every
+   `background` layer (`_withoutBackground`, keeping the theme `id` so cache
+   keys are unaffected), while the opaque fill comes from
+   `MapOptions(backgroundColor: Palette.bg)` — the same `#101315`, so nothing
+   visible changes. The shipped `dark.json` keeps its background (single-layer
+   case + attribution fidelity, locked by `test/ui/map_style_test.dart`). Order
+   the layers **shallow first**.
 4. `cacheKey` must be **distinct per archive**: the interface doc
    (`lib/src/provider/vector_tile_provider.dart:44-53`) states two providers
    sharing a key are assumed to serve identical bytes for identical
