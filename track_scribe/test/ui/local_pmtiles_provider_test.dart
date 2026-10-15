@@ -128,6 +128,16 @@ void main() {
       deep.bounds,
       equals(const (west: 2.1000, south: 36.1300, east: 2.3700, north: 36.4000)),
     );
+    // The country bbox is the routing box for every tile outside the deep pack;
+    // a rebuild that shrinks it would turn the band back into an empty
+    // rectangle, and this is the only thing that notices. PMTiles stores the
+    // header as int32 × 1e7, so these are the exact decoded values, not CI's
+    // rounded print (-8.7049/18.9287/12.0360/38.0183) — 1e-7 degrees is one
+    // header step, the tightest tolerance that cannot swallow a real change.
+    expect(shallow.bounds.west, closeTo(-8.704895, 1e-7));
+    expect(shallow.bounds.south, closeTo(18.928737, 1e-7));
+    expect(shallow.bounds.east, closeTo(12.035975, 1e-7));
+    expect(shallow.bounds.north, closeTo(38.018304, 1e-7));
 
     deep.dispose();
     shallow.dispose();
