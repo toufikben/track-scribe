@@ -95,28 +95,60 @@ void main() {
   // ر115: the route painter and the camera fit both drop `rejected` fixes, while
   // the profile was handed the full list — so the jump the recorder refused was
   // stroked against its kept neighbours as a peak the rider never made.
+  // M-2: the reject now carries an ORDINARY altitude in an ordinary place, and
+  // the wild reading belongs to a KEPT point. The law is about `type`, so the
+  // fixture must say so: a filter by `altitudeM > 500` or by position step was
+  // indistinguishable from the real rule here, and now fails.
   test('displayablePoints drops the spike the profile must not stroke', () {
     final up = _p(0, 0, 10);
-    final spike = _rejected(0.0002, 0, 999);
-    final down = _p(0.0004, 0, 20);
+    final spike = _rejected(0.0002, 0, 12); // nothing marks it out by value
+    final peak = _p(0.0004, 0, 999); // the wild reading is a real one: it stays
 
     // The defect, pinned first: unfiltered, the rejected fix pairs with BOTH kept
     // neighbours, so the strip reports a segment the route never drew.
-    expect(drawableSegmentCount([up, spike, down]), 2);
+    expect(drawableSegmentCount([up, spike, peak]), 2);
 
     // The law: the two kept points, in order, and one honest segment.
-    expect(displayablePoints([up, spike, down]), [up, down]);
-    expect(drawableSegmentCount(displayablePoints([up, spike, down])), 1);
+    expect(displayablePoints([up, spike, peak]), [up, peak]);
+    expect(drawableSegmentCount(displayablePoints([up, spike, peak])), 1);
   });
 
   test('displayablePoints removes only rejected — the ر5 idle gaps survive', () {
     final normal = _p(0, 0, 10);
     final gap = _idle(0.0002, 0, 15);
-    final after = _p(0.0004, 0, 20);
-    final spike = _rejected(0.0006, 0, 999);
+    final after = _p(0.0004, 0, 999); // wild value on a kept point — it survives
+    final spike = _rejected(0.0006, 0, 12); // ordinary value — and still dropped
 
     // An idle marker is a real stop the rider made, not GPS noise: the filter's
     // sole exclusion is `rejected`, and the surviving order is untouched.
     expect(displayablePoints([normal, gap, after, spike]), [normal, gap, after]);
+  });
+
+  // ر115: the filter lives at the widget boundary, NOT inside the strip. That
+  // division of labour is part of the fix: `hasAltitudeProfile`,
+  // `drawableSegmentCount` and the painter loop must all read the SAME list, so
+  // a second filter inside the widget would silently redefine the segment count.
+  // Pin the contract from the other side: hand the widget a list that already
+  // contains a rejected fix and show it draws it untouched.
+  testWidgets('the strip draws exactly the list it is handed — it never filters', (
+    tester,
+  ) async {
+    final up = _p(0, 0, 10);
+    final spike = _rejected(0.0002, 0, 12); // ordinary by value, rejected by type
+    final peak = _p(0.0004, 0, 999); // the wild reading is a kept one
+
+    await tester.pumpWidget(
+      MaterialApp(home: Scaffold(body: ElevationStrip(points: [up, spike, peak]))),
+    );
+    await tester.pumpAndSettle();
+
+    final painter = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((c) => c.painter)
+        .whereType<ElevationStripPainter>()
+        .single;
+    // Untouched: all three entries, in the order given, including the reject.
+    expect(painter.points, [up, spike, peak]);
+    expect(drawableSegmentCount(painter.points), 2);
   });
 }

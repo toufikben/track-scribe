@@ -42,10 +42,10 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
   /// [MapOptions.onMapReady] is what opens it.
   bool _mapReady = false;
 
-  List<LatLng> get _route => [
-    for (final p in widget.points)
-      if (p.type != WaypointType.rejected) LatLng(p.lat, p.lon),
-  ];
+  /// The route draws exactly what [displayablePoints] keeps (ر115) — the one
+  /// display filter every surface shares — projected to `LatLng`.
+  List<LatLng> get _route =>
+      displayablePoints(widget.points).map((p) => LatLng(p.lat, p.lon)).toList();
 
   /// Follow the fix, but only as far as the band's own tolerance allows
   /// ([shouldRecenter]) — and only turn for a heading change worth a redraw.

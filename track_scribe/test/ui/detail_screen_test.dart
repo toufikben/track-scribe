@@ -241,14 +241,18 @@ void main() {
   // ر115: the profile is a display surface like the route line and the camera
   // fit, so it must be handed the SAME list those two already draw. One filter,
   // at the widget boundary — never a second one inside the strip.
+  // M-2: the reject used to be the extreme point as well (999 m, 3.2° away), so
+  // a filter by value or by distance passed this case by luck. Now the quiet
+  // rejected fix is indistinguishable from a kept one by value, and the wild
+  // reading belongs to a KEPT fix: it must survive `displayablePoints`.
   testWidgets('the elevation profile receives the filtered points, not the raw list', (
     tester,
   ) async {
     final climb = _p(lat: 36.7500, t: 0, alt: 10);
     final stop = _p(lat: 36.7501, t: 1_000_000_000, alt: 15, type: WaypointType.idle);
-    final spike = _p(lat: 40.0, t: 2_000_000_000, alt: 999, type: WaypointType.rejected);
-    final resumed = _p(lat: 36.7502, t: 3_000_000_000, alt: 20);
-    final raw = [climb, stop, spike, resumed];
+    final spike = _p(lat: 36.75015, t: 2_000_000_000, alt: 12, type: WaypointType.rejected);
+    final far = _p(lat: 40.0, t: 3_000_000_000, alt: 999);
+    final raw = [climb, stop, spike, far];
 
     await tester.pumpWidget(
       ProviderScope(
@@ -264,8 +268,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final strip = tester.widget<ElevationStrip>(find.byType(ElevationStrip));
-    // The rejected spike is gone; the ر5 idle stop and the order survive.
-    expect(strip.points, [climb, stop, resumed]);
+    // The rejected spike is gone — on `type` alone; the ر5 idle stop, the wild
+    // kept reading and the order survive.
+    expect(strip.points, [climb, stop, far]);
 
     final painters = tester
         .widgetList<CustomPaint>(find.byType(CustomPaint))
@@ -273,7 +278,7 @@ void main() {
         .whereType<ElevationStripPainter>()
         .toList();
     expect(painters, hasLength(1));
-    expect(painters.single.points, [climb, stop, resumed]);
+    expect(painters.single.points, [climb, stop, far]);
     // The false peak disappears with the spike: two segments, not the three the
     // raw list strokes by pairing the rejected fix with both kept neighbours.
     expect(drawableSegmentCount(raw), 3);

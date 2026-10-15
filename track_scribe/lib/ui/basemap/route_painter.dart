@@ -66,8 +66,7 @@ class RoutePainter extends CustomPainter {
   final List<StoredPoint> points;
 
   /// The route: every stored point except ر4 rejects.
-  List<StoredPoint> get polylinePoints =>
-      [for (final p in points) if (p.type != WaypointType.rejected) p];
+  List<StoredPoint> get polylinePoints => displayablePoints(points);
 
   List<StoredPoint> get rejectedPoints =>
       [for (final p in points) if (p.type == WaypointType.rejected) p];
