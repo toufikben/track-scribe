@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
@@ -53,7 +52,7 @@ void main() {
 
   // R104: loaded outside any fake-async zone so the asset read can actually
   // complete; the map-branch collision test overrides mapStyleProvider with it.
-  late Style style;
+  late BundledStyle style;
 
   setUpAll(() async {
     style = await loadStubVectorStyle();

@@ -121,12 +121,16 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
                       },
                     ),
                     children: [
-                      VectorTileLayer(
-                        theme: s.theme,
-                        tileProviders: s.providers,
-                        sprites: s.sprites,
-                        diskCacheMaximumSizeInBytes: 0,
-                      ),
+                      // One layer per pack, shallowest first (ر107): the deep
+                      // pack paints its box, the country pack paints beneath
+                      // and around it — never a second decode of the same tile.
+                      for (final providers in s.layers)
+                        VectorTileLayer(
+                          theme: s.theme,
+                          tileProviders: providers,
+                          sprites: s.sprites,
+                          diskCacheMaximumSizeInBytes: 0,
+                        ),
                       if (_route.length >= 2)
                         PolylineLayer(
                           polylines: [

@@ -1,7 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/activity_repository.dart';
@@ -48,7 +47,7 @@ ActivitySummary _synthetic({required List<StoredPoint> points, int id = 7}) =>
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late Style style;
+  late BundledStyle style;
 
   // R104: `rootBundle.load()` and the path_provider channel both pend forever
   // under the fake-async binding, so the loaded-map branch is only reachable
@@ -166,7 +165,7 @@ void main() {
       ProviderScope(
         overrides: [
           mapStyleProvider.overrideWith(
-            (ref) => Future<Style>.error(StateError('no tiles')),
+            (ref) => Future<BundledStyle>.error(StateError('no tiles')),
           ),
           activityDetailProvider.overrideWith(
             (ref, id) => Future.value(

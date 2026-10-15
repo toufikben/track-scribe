@@ -166,16 +166,21 @@ class _DetailMap extends ConsumerWidget {
                           maxZoom: 16,
                         ),
                   minZoom: 2,
-                  maxZoom: 18,
+                  // The deepest bundled pack's ceiling, not a literal: past it
+                  // there is nothing to overzoom either (ر107).
+                  maxZoom: s.maximumZoom.toDouble(),
                   backgroundColor: Palette.bg,
                 ),
                 children: [
-                  VectorTileLayer(
-                    theme: s.theme,
-                    tileProviders: s.providers,
-                    sprites: s.sprites,
-                    diskCacheMaximumSizeInBytes: 0,
-                  ),
+                  // One layer per pack, shallowest first (ر107) — same stacked
+                  // routing as the recording band.
+                  for (final providers in s.layers)
+                    VectorTileLayer(
+                      theme: s.theme,
+                      tileProviders: providers,
+                      sprites: s.sprites,
+                      diskCacheMaximumSizeInBytes: 0,
+                    ),
                   GradedRouteLayer(points: summary.points, strokeWidth: thickness),
                   MarkerLayer(
                     markers: [

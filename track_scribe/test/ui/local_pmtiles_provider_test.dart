@@ -1,13 +1,14 @@
 import 'dart:io' show File;
 import 'dart:math' as math;
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:pmtiles/pmtiles.dart';
 import 'package:track_scribe/ui/basemap/local_pmtiles_provider.dart';
+import 'package:track_scribe/ui/basemap/map_style_provider.dart' show stackProviders;
 
 TileKey _tileKeyAt(int z, double lat, double lon) {
   final n = 1 << z;
@@ -19,25 +20,32 @@ TileKey _tileKeyAt(int z, double lat, double lon) {
   return TileKey(z, x, y);
 }
 
+/// Loads a bundled pack as an archive, the way the app does at runtime.
+/// rootBundle.load never runs inside a fake-async zone here (plain `test`,
+/// and the asset completes in real time).
+Future<PmTilesArchive> openAsset(String name) async {
+  final data = await rootBundle.load('assets/tiles/$name');
+  return PmTilesArchive.fromBytes(
+    data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+  );
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('serves a real wilaya tile, reports honest zooms, rejects outside', () async {
-    final data = await rootBundle.load('assets/tiles/dz-wilaya-alger-z14.pmtiles');
-    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-    final archive = await PmTilesArchive.fromBytes(bytes);
+  test('serves a real pack tile, reports honest zooms, rejects outside', () async {
     final provider = LocalPmTilesProvider(
-      archives: [archive],
-      cacheKey: 'test-wilaya',
+      archive: await openAsset('dz-khemis-miliana-z14.pmtiles'),
+      cacheKey: 'test-khemis',
     );
 
     expect(provider.minimumZoom, 0);
     expect(provider.maximumZoom, 14);
-    expect(provider.cacheKey, 'test-wilaya');
+    expect(provider.cacheKey, 'test-khemis');
     expect(provider.cacheBytesToDisk, isFalse);
 
-    // Algiers centre — inside the wilaya bounds (2.85..3.68 E, 36.42..37.10 N)
-    final inside = await provider.load(_tileKeyAt(14, 36.7525, 3.0420));
+    // Khemis Miliana centre — inside the pack's own bbox (2.10..2.37 E, 36.13..36.40 N)
+    final inside = await provider.load(_tileKeyAt(14, 36.2537, 2.2328));
     expect(inside, isA<TileResponseData>());
     expect((inside as TileResponseData).bytes.length, greaterThan(100));
 
@@ -47,18 +55,15 @@ void main() {
 
     // a zoom the pack does not cover is not the pack's job — the pipeline
     // clamps, but a direct over-range request must be NotFound, never a throw
-    final deep = await provider.load(_tileKeyAt(17, 36.7525, 3.0420));
+    final deep = await provider.load(_tileKeyAt(17, 36.2537, 2.2328));
     expect(deep, isA<TileResponseNotFound>());
 
     provider.dispose();
   });
 
   test('serves the country pack at a zoom only it covers', () async {
-    final data = await rootBundle.load('assets/tiles/dz-country-z12.pmtiles');
-    final bytes = data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-    final country = await PmTilesArchive.fromBytes(bytes);
     final provider = LocalPmTilesProvider(
-      archives: [country],
+      archive: await openAsset('dz-country-z12.pmtiles'),
       cacheKey: 'test-country',
     );
     expect(provider.maximumZoom, 12);
@@ -68,33 +73,87 @@ void main() {
     provider.dispose();
   });
 
-  // Ruling R103: pack priority comes from each PMTiles header's own maxZoom,
-  // never from the order the caller passed. Adding a pack must be data.
+  test('each pack answers with its OWN ceiling, so a z14 view outside the deep '
+       'pack still gets the shallow one (ر107)', () async {
+    final deep = LocalPmTilesProvider(
+      archive: await openAsset('dz-khemis-miliana-z14.pmtiles'),
+      cacheKey: 'test-deep',
+    );
+    final shallow = LocalPmTilesProvider(
+      archive: await openAsset('dz-country-z12.pmtiles'),
+      cacheKey: 'test-shallow',
+    );
+    expect(deep.maximumZoom, 14);
+    expect(shallow.maximumZoom, 12,
+        reason: 'a merged ceiling of 14 is what made the band an empty rectangle');
+
+    // Khemis Miliana: inside the country bbox AND inside the deep pack's box.
+    final home = const LatLng(36.2537, 2.2328);
+    expect(shallow.covers(home), isTrue);
+    expect(deep.covers(home), isTrue);
+
+    // ~120 km west, still inside Algeria: the deep pack must refuse it and the
+    // country pack must take it. This is the exact void the device photographed.
+    final elsewhere = const LatLng(36.18, 1.22); // Mascara side
+    expect(deep.covers(elsewhere), isFalse);
+    expect(shallow.covers(elsewhere), isTrue);
+
+    // A shallow provider shadowed by the deep box does not paint under it: the
+    // cost of stacking is one coarse tile per deep tile, and this removes it.
+    // `deep.bounds` is the record read off that archive's OWN header — the test
+    // must route with the same numbers the provider uses, never a literal box.
+    final shadowed = LocalPmTilesProvider(
+      archive: await openAsset('dz-country-z12.pmtiles'),
+      cacheKey: 'test-shallow-shadowed',
+      shadowedBy: [deep.bounds],
+    );
+    expect(shadowed.covers(home), isFalse);
+    expect(shadowed.covers(elsewhere), isTrue);
+
+    // The header itself is pinned, so a rebuilt pack that moves its box cannot
+    // silently change the routing. These are the values decoded from the
+    // shipped pack on 2026-10-14.
+    expect(
+      deep.bounds,
+      equals(const (west: 2.1000, south: 36.1300, east: 2.3700, north: 36.4000)),
+    );
+
+    deep.dispose();
+    shallow.dispose();
+    shadowed.dispose();
+  });
+
+  // Ruling R103: pack priority is read off each PMTiles header's own maxZoom,
+  // never from the order the caller passes. The law moved from
+  // LocalPmTilesProvider to stackProviders (map_style_provider.dart) when each
+  // layer bound its own archive; it still guards, on the Khemis pack now.
   test('deepest-pack-first ordering comes from the headers, not caller order', () async {
-    Future<Uint8List> assetBytes(String name) async {
-      final data = await rootBundle.load('assets/tiles/$name');
-      return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
-    }
+    final country = await openAsset('dz-country-z12.pmtiles');
+    final khemis = await openAsset('dz-khemis-miliana-z14.pmtiles');
 
-    final wilaya = await PmTilesArchive.fromBytes(
-      await assetBytes('dz-wilaya-alger-z14.pmtiles'),
-    );
-    final country = await PmTilesArchive.fromBytes(
-      await assetBytes('dz-country-z12.pmtiles'),
+    // WRONG caller order on purpose: the headers decide (R103).
+    final providers = stackProviders([
+      (archive: khemis, cacheKey: 'test-order-deep'),
+      (archive: country, cacheKey: 'test-order-shallow'),
+    ]);
+    expect(
+      providers.map((p) => p.maximumZoom),
+      [12, 14],
+      reason: 'shallowest first, from the headers, not the argument order',
     );
 
-    // Both packs answer a z12 tile over Algiers. Pass them in the WRONG order.
-    final provider = LocalPmTilesProvider(
-      archives: [country, wilaya],
-      cacheKey: 'test-both',
-    );
-    expect(provider.maximumZoom, 14);
-
-    final key = _tileKeyAt(12, 36.7525, 3.0420);
-    final served = await provider.load(key);
+    // Measured on the shipped packs: for the TOWN's own z12 tile both packs
+    // hold byte-identical data (the country build shares the clipped one
+    // there), so a winner assertion on that tile would be vacuous. The bbox-
+    // edge tile is held by both and its bytes DIFFER (the deep pack's is
+    // clipped at the bbox) — only there can the negative half pin which
+    // pack won. Layers paint bottom-up, so the deep provider's bytes are
+    // what wins on screen.
+    final key = _tileKeyAt(12, 36.42, 2.2328);
+    final served = await providers[1].load(key);
     expect(served, isA<TileResponseData>());
 
-    final deeper = await wilaya.tile(ZXY(12, key.x, key.y).toTileId());
+    final deeper = await khemis.tile(ZXY(12, key.x, key.y).toTileId());
     expect(
       listEquals((served as TileResponseData).bytes, deeper.bytes()),
       isTrue,
@@ -102,7 +161,7 @@ void main() {
     );
 
     // The negative half: the shallow pack also holds this tile, and its bytes
-    // are NOT what was served. Without this the positive assertion could pass
+    // are NOT what wins. Without this the positive assertion could pass
     // under any ordering the day both packs are rebuilt from one source.
     final shallower = await country.tile(ZXY(12, key.x, key.y).toTileId());
     expect(
@@ -111,73 +170,77 @@ void main() {
       reason: 'the z12 pack must not be what wins for a contested tile',
     );
 
-    provider.dispose();
+    // And the shallow provider is shadowed over the town: stacked above by
+    // the deep pack's FULL bbox, it must refuse a fully-covered tile outright.
+    final home = _tileKeyAt(12, 36.2537, 2.2328);
+    expect(
+      await providers[0].load(home),
+      isA<TileResponseNotFound>(),
+      reason: 'the z12 tile of a shadowed pack must not decode under the deep layer',
+    );
+
+    for (final p in providers) {
+      p.dispose();
+    }
   });
 
-  // The everyday path of the real map: the wilaya header claims z0-14 but its
-  // bounds cover only Alger province, so most z<=12 queries over Algeria are
-  // honest absences in the deep pack that must fall through to the country one.
-  test('falls through to the country pack when the deep pack lacks the tile', () async {
-    final wdata = await rootBundle.load('assets/tiles/dz-wilaya-alger-z14.pmtiles');
-    final wilaya = await PmTilesArchive.fromBytes(
-      wdata.buffer.asUint8List(wdata.offsetInBytes, wdata.lengthInBytes),
+  // The everyday path of the real map: the deep header claims z0-14 but its
+  // bounds cover one town, so most z<=12 queries over Algeria are honest
+  // absences in the deep pack that the stacked country layer answers instead.
+  test('a tile outside the deep pack is its honest NotFound while the country pack answers it', () async {
+    final khemis = await openAsset('dz-khemis-miliana-z14.pmtiles');
+    final country = await openAsset('dz-country-z12.pmtiles');
+    const cacheKey = 'test-fall-through';
+    final deepProvider = LocalPmTilesProvider(
+      archive: khemis,
+      cacheKey: cacheKey,
     );
-    final cdata = await rootBundle.load('assets/tiles/dz-country-z12.pmtiles');
-    final country = await PmTilesArchive.fromBytes(
-      cdata.buffer.asUint8List(cdata.offsetInBytes, cdata.lengthInBytes),
-    );
-    // WRONG caller order on purpose: the headers decide (R103), so the wilaya
-    // pack is queried first for this tile — and does not hold it.
-    final provider = LocalPmTilesProvider(
-      archives: [country, wilaya],
-      cacheKey: 'test-fall-through',
+    final countryProvider = LocalPmTilesProvider(
+      archive: country,
+      cacheKey: 'test-fall-through-country',
     );
 
-    final key = _tileKeyAt(12, 22.8, 5.5); // Tamanrasset: in country, outside wilaya
-    final served = await provider.load(key);
+    final key = _tileKeyAt(12, 22.8, 5.5); // Tamanrasset: in country, outside the deep box
+    expect(
+      await deepProvider.load(key),
+      isA<TileResponseNotFound>(),
+      reason: 'the bbox test, not the directory, must reject an outside tile',
+    );
+
+    final served = await countryProvider.load(key);
     expect(served, isA<TileResponseData>());
 
     final direct = await country.tile(ZXY(12, key.x, key.y).toTileId());
     expect(
       listEquals((served as TileResponseData).bytes, direct.bytes()),
       isTrue,
-      reason: 'the country pack must answer a tile the deeper pack does not hold',
+      reason: 'the country pack must answer a tile the deeper pack does not cover',
     );
 
-    provider.dispose();
+    deepProvider.dispose();
+    countryProvider.dispose();
   });
 
   // tile() awaits lookup + readAt, which can throw — e.g. its FileAt read pool
   // closed while the provider stays live. Such an error must never escape to
-  // the renderer, and must not hide the healthy shallow pack either.
-  test('a closed read pool in the deep pack neither escapes nor hides the shallow pack', () async {
+  // the renderer: the provider answers NotFound and stays silent.
+  test('a closed read pool neither escapes nor throws at the renderer', () async {
     // File-backed exactly like the first-launch runtime (pack copied to docs).
-    final wilaya = await PmTilesArchive.fromFile(
-      File('assets/tiles/dz-wilaya-alger-z14.pmtiles'),
-    );
-    final cdata = await rootBundle.load('assets/tiles/dz-country-z12.pmtiles');
-    final country = await PmTilesArchive.fromBytes(
-      cdata.buffer.asUint8List(cdata.offsetInBytes, cdata.lengthInBytes),
+    final khemis = await PmTilesArchive.fromFile(
+      File('assets/tiles/dz-khemis-miliana-z14.pmtiles'),
     );
     final provider = LocalPmTilesProvider(
-      archives: [country, wilaya],
+      archive: khemis,
       cacheKey: 'test-closed-pool',
     );
-    await wilaya.close();
+    await khemis.close();
 
-    // A z12 tile over Algiers the deep pack holds: reading it now fails inside
-    // the await itself, so only a guarded fall-through reaches the country pack.
-    final key = _tileKeyAt(12, 36.7525, 3.0420);
+    // A z14 tile over Khemis the pack holds: reading it now fails inside the
+    // await itself. The guard must convert that into an honest NotFound.
+    final key = _tileKeyAt(14, 36.2537, 2.2328);
     final served = await provider.load(key);
-    expect(served, isA<TileResponseData>());
+    expect(served, isA<TileResponseNotFound>());
 
-    final direct = await country.tile(ZXY(12, key.x, key.y).toTileId());
-    expect(
-      listEquals((served as TileResponseData).bytes, direct.bytes()),
-      isTrue,
-      reason: 'one unreadable pack must not hide the good shallow pack',
-    );
-
-    provider.dispose();
+    provider.dispose(); // disposing an archive whose pool is already closed
   });
 }

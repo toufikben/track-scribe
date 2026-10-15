@@ -30,7 +30,7 @@ StoredPoint _p(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late Style style;
+  late BundledStyle style;
 
   setUpAll(() async {
     style = await loadStubVectorStyle();
@@ -59,6 +59,27 @@ void main() {
     expect(find.byKey(const Key('basemap-scale')), findsOneWidget);
   });
 
+  // ر107 regression guard: the band must render one VectorTileLayer per
+  // stacked pack entry, each bound to its OWN provider — a single-layer
+  // regression would hide nowhere else than in this widget tree.
+  testWidgets('the band stacks one VectorTileLayer per bundled pack (ر107)', (
+    tester,
+  ) async {
+    final points = [_p(36.7500, 3.0400), _p(36.7520, 3.0420)];
+    await tester.pumpWidget(wrap(VectorMapBand(points: points, current: points.last)));
+    await tester.pumpAndSettle();
+
+    final layers = tester
+        .widgetList<VectorTileLayer>(find.byType(VectorTileLayer))
+        .toList();
+    expect(layers.length, style.layers.length);
+    expect(
+      layers.map((l) => identityHashCode(l.tileProviders)).toSet().length,
+      style.layers.length,
+      reason: 'each layer binds its own pack provider, not one merged one',
+    );
+  });
+
   testWidgets('IDLE point draws the idle badge and no halo', (tester) async {
     final idle = _p(36.7520, 3.0420, type: WaypointType.idle);
     await tester.pumpWidget(wrap(VectorMapBand(points: [idle], current: idle)));
@@ -75,7 +96,7 @@ void main() {
       ProviderScope(
         overrides: [
           mapStyleProvider.overrideWith(
-            (ref) => Future<Style>.error(StateError('no tiles')),
+            (ref) => Future<BundledStyle>.error(StateError('no tiles')),
           ),
         ],
         child: MaterialApp(
@@ -110,7 +131,7 @@ void main() {
       ProviderScope(
         overrides: [
           mapStyleProvider.overrideWith(
-            (ref) => Completer<Style>().future, // never resolves
+            (ref) => Completer<BundledStyle>().future, // never resolves
           ),
         ],
         child: MaterialApp(

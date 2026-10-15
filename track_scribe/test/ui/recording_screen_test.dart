@@ -1,6 +1,5 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
@@ -68,7 +67,7 @@ ActivitySummary _detailSummary(int id) => ActivitySummary(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  late Style style;
+  late BundledStyle style;
 
   // R104: a pushed detail screen watches `mapStyleProvider`; loading the real
   // bundled style would `rootBundle.load()` inside the fake-async zone and pend

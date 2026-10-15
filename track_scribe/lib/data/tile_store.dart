@@ -8,10 +8,11 @@ import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 
 /// Bundled tile packs: `assets/tiles/<name>` → `<documents>/tiles/<name>`.
-/// Exact artifact sizes from CI runs 38201305204 / 38201311231 (spec §12.1).
+/// Exact artifact sizes from CI runs 38201305204 / 38201311231 (spec §12.1)
+/// and tiles-spike run 38637771170 (the Khemis Miliana pack, ر107).
 const kBundledTileNames = [
-  'dz-wilaya-alger-z14.pmtiles', // 20_548_695 B — Alger wilaya z0-14
   'dz-country-z12.pmtiles', // 53_718_750 B — Algeria z0-12
+  'dz-khemis-miliana-z14.pmtiles', // 1_792_009 B — Khemis Miliana z0-14
 ];
 
 /// Versioned first-launch copy of the bundled packs into app documents —
@@ -24,11 +25,13 @@ class TileStore {
   final ActivityRepository _repo;
   final Future<Directory> Function() _baseDir;
 
-  static const flagKey = 'tiles-v1';
+  static const flagKey = 'tiles-v2';
 
   /// Copies the packs if the flag is unset OR any pack is missing (a copy
-  /// killed mid-write must not leave a permanently broken install). Returns
-  /// the tiles directory path.
+  /// killed mid-write must not leave a permanently broken install), and
+  /// prunes any `*.pmtiles` the registry no longer names — a shipped pack
+  /// rename would otherwise strand its bytes on every installed phone
+  /// (ر107: the Alger pack left the bundle). Returns the tiles directory path.
   Future<String> ensureBundledTiles() async {
     final docs = await _baseDir();
     final dir = Directory(p.join(docs.path, 'tiles'));
@@ -51,6 +54,16 @@ class TileStore {
         );
       }
       await _repo.setFlag(flagKey, true);
+    }
+    // Pruning runs on every pass, not only a copy pass: an orphan written
+    // while the flag was already set must still go.
+    final keep = kBundledTileNames.toSet();
+    await for (final entity in dir.list()) {
+      if (entity is File &&
+          entity.path.endsWith('.pmtiles') &&
+          !keep.contains(p.basename(entity.path))) {
+        await entity.delete();
+      }
     }
     return dir.path;
   }

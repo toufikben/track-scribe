@@ -1,6 +1,5 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
@@ -31,7 +30,7 @@ Future<AppDatabase> _seededDb() async {
 /// pends forever under `testWidgets`, so the map branch — not the fallback —
 /// is what these rects must measure (R104).
 void main() {
-  late Style style;
+  late BundledStyle style;
 
   setUpAll(() async {
     style = await loadStubVectorStyle();

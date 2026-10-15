@@ -1,12 +1,20 @@
 import 'dart:convert';
+import 'dart:io' show Directory;
 
+import 'package:drift/native.dart';
 import 'package:flutter/painting.dart' show Color;
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:http/http.dart' as http;
+import 'package:track_scribe/data/activity_repository.dart';
+import 'package:track_scribe/data/database.dart';
+import 'package:track_scribe/data/tile_store.dart';
 import 'package:track_scribe/theme/palette.dart';
-import 'package:track_scribe/ui/basemap/local_pmtiles_provider.dart';
+import 'package:track_scribe/ui/basemap/map_style_provider.dart';
+
+import '../support/stub_vector_style.dart';
 
 /// Any network attempt fails the test: the bundled style must load fully
 /// offline (spec §12.1 «لا شيء يُجلب من الشبكة»).
@@ -30,9 +38,8 @@ void main() {
       uri: 'asset://assets/styles/dark.json',
       cache: false,
       httpClient: _NoNetworkClient(),
-      resolveProvider: (id) async => id == 'openmaptiles'
-          ? LocalPmTilesProvider(archives: const [], cacheKey: 'style-test')
-          : null,
+      resolveProvider: (id) async =>
+          id == 'openmaptiles' ? StubTileProvider() : null,
     ).read();
 
     expect(style.theme.backgroundColor(0), Palette.bg);
@@ -68,5 +75,50 @@ void main() {
         .whereType<Map>()
         .where((s) => s['type'] == 'raster'), isEmpty);
     expect(doc['sprite'], 'sprites/ofm');
+  });
+
+  // ر107: the provider yields one TileProviders entry per registered pack —
+  // shallowest first, each binding the source id the style declares — so the
+  // bands can stack one VectorTileLayer per pack instead of one merged ceiling.
+  test('mapStyleProvider stacks two layers, shallow→deep, each on the style source id',
+      () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final tmp = await Directory.systemTemp.createTemp('map-style-r107');
+    addTearDown(() => tmp.delete(recursive: true));
+    final container = ProviderContainer(
+      overrides: [
+        tileStoreProvider.overrideWithValue(
+          TileStore(ActivityRepository(db), baseDir: () async => tmp),
+        ),
+      ],
+    );
+    // container.dispose runs ref.onDispose → BundledStyle.dispose → the one
+    // owner of every archive closes each exactly once. Do not dispose twice.
+    addTearDown(container.dispose);
+
+    final bundled = await container.read(mapStyleProvider.future);
+
+    expect(bundled.layers.length, 2);
+    expect(
+      bundled.layers.map((l) => l.providers.values.single.maximumZoom),
+      [12, 14],
+      reason: 'ordered shallow→deep from the headers (R103)',
+    );
+    for (final layer in bundled.layers) {
+      expect(
+        layer.providers.keys,
+        [kBundledStyleSourceId],
+        reason: 'the only key is the source id the bundled style declares',
+      );
+    }
+    expect(
+      bundled.layers.map((l) => l.providers.values.single.cacheKey).toSet().length,
+      2,
+      reason: 'distinct cacheKey per archive, or the renderer caches across packs',
+    );
+    expect(bundled.maximumZoom, 14);
+    expect(bundled.theme.layers, isNotEmpty);
+    expect(bundled.sprites, isNotNull);
   });
 }
