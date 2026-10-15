@@ -37,4 +37,38 @@ class Format {
     final h = s ~/ 3600, m = (s % 3600) ~/ 60, sec = s % 60;
     return h == 0 ? '${_pad(m)}:${_pad(sec)}' : '${_pad(h)}:${_pad(m)}:${_pad(sec)}';
   }
+
+  /// The Arabic month names in calendar order (ر118). Hand-rolled because the
+  /// app has no locale package — R23 already rejects `flutter_localizations`
+  /// for the same reason, and adding `intl` for one label would put locale
+  /// data into an app whose whole promise is that nothing is fetched.
+  static const _monthsAr = [
+    'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', //
+    'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+  ];
+
+  /// A start stamp as `15 أكتوبر 2026 · 21:33`, or `اليوم` / `أمس` for the two
+  /// most recent CALENDAR days.
+  ///
+  /// ر1/R21 applies to this function in full: the wall clock is read to label
+  /// and order a row, never to produce a duration. The day difference below
+  /// chooses which WORD to print and nothing else — which is why it compares
+  /// midnight-to-midnight `DateTime`s instead of subtracting the two stamps
+  /// (23:50 recorded, 00:10 read is one day ago, not twenty minutes ago).
+  ///
+  /// `now` is injectable so the test does not depend on when it runs.
+  static String activityDate(int startWallMillis, {DateTime? now}) {
+    final start = DateTime.fromMillisecondsSinceEpoch(startWallMillis);
+    final today = now ?? DateTime.now();
+    final dayDiff = DateTime(today.year, today.month, today.day).difference(
+      DateTime(start.year, start.month, start.day),
+    );
+    final int days = dayDiff.inDays;
+    final when = days == 0
+        ? 'اليوم'
+        : days == 1
+        ? 'أمس'
+        : '${start.day} ${_monthsAr[start.month - 1]} ${start.year}';
+    return '$when · ${_pad(start.hour)}:${_pad(start.minute)}';
+  }
 }

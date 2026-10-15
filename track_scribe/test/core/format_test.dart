@@ -28,4 +28,56 @@ void main() {
   test('negative duration fails loudly instead of lying quietly', () {
     expect(() => Format.duration(-1000000000), throwsAssertionError);
   });
+
+  // ر118: the month names are ours, not `intl`'s — the app rejected the locale
+  // package in R23 and this label is the only date it needs.
+  group('activityDate', () {
+    test('prints day, Arabic month and year with a 24-hour clock', () {
+      final stamp = DateTime(2026, 10, 15, 21, 33).millisecondsSinceEpoch;
+      expect(
+        Format.activityDate(stamp, now: DateTime(2026, 11, 2, 9)),
+        '15 أكتوبر 2026 · 21:33',
+      );
+    });
+
+    test('single-digit day and minute are not zero-padded in the day, padded in the clock', () {
+      final stamp = DateTime(2026, 4, 5, 7, 3).millisecondsSinceEpoch;
+      expect(
+        Format.activityDate(stamp, now: DateTime(2026, 4, 20)),
+        '5 أبريل 2026 · 07:03',
+      );
+    });
+
+    // «اليوم»/«أمس» compare CALENDAR days: 23:50 → 00:10 is one day apart, not
+    // 20 minutes, and the row must not claim an old activity happened today.
+    test('today and yesterday use words, keyed on the calendar day', () {
+      final lateNight = DateTime(2026, 10, 15, 23, 50).millisecondsSinceEpoch;
+      expect(Format.activityDate(lateNight, now: DateTime(2026, 10, 15, 23, 55)), 'اليوم · 23:50');
+      expect(Format.activityDate(lateNight, now: DateTime(2026, 10, 16, 0, 10)), 'أمس · 23:50');
+      expect(
+        Format.activityDate(lateNight, now: DateTime(2026, 10, 17)),
+        '15 أكتوبر 2026 · 23:50',
+      );
+    });
+
+    test('a stamp from twelve months back still resolves its month', () {
+      final stamp = DateTime(2025, 10, 15, 8, 0).millisecondsSinceEpoch;
+      expect(
+        Format.activityDate(stamp, now: DateTime(2026, 10, 15)),
+        '15 أكتوبر 2025 · 08:00',
+      );
+    });
+
+    test('a future stamp is not called today', () {
+      final stamp = DateTime(2026, 10, 16, 9).millisecondsSinceEpoch;
+      expect(
+        Format.activityDate(stamp, now: DateTime(2026, 10, 15)),
+        '16 أكتوبر 2026 · 09:00',
+      );
+    });
+
+    test('now defaults to the device clock', () {
+      expect(Format.activityDate(DateTime.now().millisecondsSinceEpoch), startsWith('اليوم'));
+    });
+  });
 }
