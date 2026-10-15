@@ -67,7 +67,10 @@ class LocalPmTilesProvider implements VectorTileProvider {
   bool get cacheBytesToDisk => false;
 
   /// The point form of the routing: true only inside this pack's own bbox
-  /// and outside every deeper stacked pack's box.
+  /// and outside every deeper stacked pack's box. Test-only — no production
+  /// consumer, [load] routes on the rectangle form — but it is the readable
+  /// statement of the law those tests lock, so it stays. (A comment rather than
+  /// `@visibleForTesting`: `meta` is not a direct dependency.)
   bool covers(LatLng point) =>
       _within(_bounds, point) &&
       !_shadowedBy.any((b) => _within(b, point));

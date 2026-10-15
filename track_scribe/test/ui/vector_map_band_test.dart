@@ -100,6 +100,38 @@ void main() {
     );
   });
 
+  // R114: the band stacks one VectorTileLayer per pack and each layer paints
+  // its own background for a refused tile (tile_rasterizer.dart:122-131), so
+  // the TOP (deep) layer occludes the shallow one everywhere outside its box.
+  // The theme must therefore carry no `background` layer — the flat fill lives
+  // on MapOptions.backgroundColor, which the same Palette.bg contract already
+  // supplies. This test proves the band consumes the stripped BundledStyle
+  // verbatim (no re-strip, no added background layer) and hands the fill to
+  // FlutterMap.
+  testWidgets('the band stacks background-free themes and lets MapOptions supply the fill', (
+    tester,
+  ) async {
+    final points = [_p(36.7500, 3.0400), _p(36.7520, 3.0420)];
+    await tester.pumpWidget(wrap(VectorMapBand(points: points, current: points.last)));
+    await tester.pumpAndSettle();
+
+    final themes = tester
+        .widgetList<VectorTileLayer>(find.byType(VectorTileLayer))
+        .map((e) => e.theme)
+        .toList();
+    expect(themes, isNotEmpty,
+        reason: 'the band must build one VectorTileLayer per stacked pack');
+    for (final theme in themes) {
+      expect(theme.backgroundColor(0), isNull,
+          reason: 'a stacked theme that fills its tiles hides the layer below');
+    }
+    expect(
+      tester.widget<FlutterMap>(find.byType(FlutterMap)).options.backgroundColor,
+      Palette.bg,
+      reason: 'the flat fill lives on the map, not on any theme layer',
+    );
+  });
+
   testWidgets('IDLE point draws the idle badge and no halo', (tester) async {
     final idle = _p(36.7520, 3.0420, type: WaypointType.idle);
     await tester.pumpWidget(wrap(VectorMapBand(points: [idle], current: idle)));

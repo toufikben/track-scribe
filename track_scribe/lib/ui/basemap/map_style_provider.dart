@@ -23,11 +23,11 @@ const double kMapDisplayMaxZoom = 18;
 /// pack-bbox rules in [LocalPmTilesProvider] make exactly one of them answer
 /// any given tile.
 class BundledStyle {
-  const BundledStyle({
-    required this.theme,
+  BundledStyle({
+    required Theme theme,
     required this.sprites,
     required this.layers,
-  });
+  }) : theme = _withoutBackground(theme);
 
   final Theme theme;
   final SpriteAtlas? sprites;
@@ -35,6 +35,8 @@ class BundledStyle {
 
   /// Deepest header zoom across the stacked packs: the DATA ceiling, which the
   /// provider clamps to. The camera's display ceiling is [kMapDisplayMaxZoom].
+  /// No production consumer (both bands pin the display ceiling themselves); the
+  /// tests asserting it are what keep it honest, so do not delete them.
   int get maximumZoom => layers
       .expand((l) => l.providers.values)
       .map((provider) => provider.maximumZoom)
@@ -51,6 +53,21 @@ class BundledStyle {
     sprites?.dispose();
   }
 }
+
+/// R114: a theme that is going to be STACKED must not carry a `background`
+/// layer — the renderer paints it even for a tile the pack refused
+/// (tile_rasterizer.dart:122-131), so the top layer would hide the shallow one
+/// everywhere outside its box. The opaque fill is `MapOptions.backgroundColor`,
+/// which is the same #101315. Enforced on the type so no producer — production
+/// or the R104 test stub — can hand a band a stacking-hostile theme. The id is
+/// kept so cache keys are unaffected.
+Theme _withoutBackground(Theme theme) => Theme(
+      id: theme.id,
+      layers: [
+        for (final layer in theme.layers)
+          if (layer is! BackgroundThemeLayer) layer,
+      ],
+    );
 
 /// R103's law in its new home: layer priority comes from each archive's own
 /// header `maxZoom`, never from caller order — shallowest first, so the deep

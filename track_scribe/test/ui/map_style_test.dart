@@ -121,4 +121,45 @@ void main() {
     expect(bundled.theme.layers, isNotEmpty);
     expect(bundled.sprites, isNotNull);
   });
+
+  // R114: the theme the bands render with must paint NOTHING for a tile its
+  // pack refused, or the stacked deep layer hides the shallow one outside its
+  // box. `Theme.backgroundColor` is the public seam: it reports the first
+  // background layer, or null when the theme has none.
+  test('the stacked theme carries no background layer — the bands supply it',
+      () async {
+    final raw = await StyleReader(
+      uri: 'asset://assets/styles/dark.json',
+      cache: false,
+      httpClient: _NoNetworkClient(),
+      resolveProvider: (id) async =>
+          id == 'openmaptiles' ? StubTileProvider() : null,
+    ).read();
+    addTearDown(raw.dispose);
+
+    expect(raw.theme.backgroundColor(0), Palette.bg,
+        reason: 'the shipped style still paints its own background');
+
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final tmp = await Directory.systemTemp.createTemp('map-style-r114');
+    addTearDown(() => tmp.delete(recursive: true));
+    final container = ProviderContainer(
+      overrides: [
+        tileStoreProvider.overrideWithValue(
+          TileStore(ActivityRepository(db), baseDir: () async => tmp),
+        ),
+      ],
+    );
+    // The one disposal path: container.dispose → ref.onDispose → BundledStyle
+    // .dispose → every archive closes exactly once.
+    addTearDown(container.dispose);
+
+    final bundled = await container.read(mapStyleProvider.future);
+
+    expect(bundled.theme.backgroundColor(0), isNull,
+        reason: 'a stacked layer that fills its tiles hides the layer below');
+    expect(bundled.theme.layers.length, raw.theme.layers.length - 1,
+        reason: 'exactly the background layer is dropped — nothing else');
+  });
 }
