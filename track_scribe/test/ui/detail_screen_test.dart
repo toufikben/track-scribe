@@ -8,6 +8,7 @@ import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
+import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
@@ -149,7 +150,7 @@ void main() {
   // (the provider clamps to it, core/tile_zoom.dart); capping the camera at 14
   // also clamps the one-point fit's `CameraFit.coordinates(maxZoom: 16)` below,
   // making it dead configuration.
-  testWidgets('the replay map caps the camera at the shared display ceiling, not the pack ceiling', (
+  testWidgets('the replay map pins its display ceiling and owns its opaque fill', (
     tester,
   ) async {
     await tester.pumpWidget(seededApp(activityId: seededId));
@@ -162,6 +163,10 @@ void main() {
       greaterThan(style.maximumZoom.toDouble()),
       reason: 'the detail screen must not sit at a shallower ceiling than the band',
     );
+    // R114: the stacked theme carries no `background` layer, so this option is
+    // the ONLY thing that makes the replay map opaque. Left unpinned, a future
+    // edit could drop it and paint the page's background through the map.
+    expect(options.backgroundColor, Palette.bg);
   });
 
   testWidgets('shows the load error state for a missing activity', (tester) async {

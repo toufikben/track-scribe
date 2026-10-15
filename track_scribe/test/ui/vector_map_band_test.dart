@@ -101,7 +101,7 @@ void main() {
   });
 
   // R114: the band stacks one VectorTileLayer per pack and each layer paints
-  // its own background for a refused tile (tile_rasterizer.dart:122-131), so
+  // its own background for a refused tile (tile_rasterizer.dart:123-132), so
   // the TOP (deep) layer occludes the shallow one everywhere outside its box.
   // The theme must therefore carry no `background` layer — the flat fill lives
   // on MapOptions.backgroundColor, which the same Palette.bg contract already
@@ -119,8 +119,9 @@ void main() {
         .widgetList<VectorTileLayer>(find.byType(VectorTileLayer))
         .map((e) => e.theme)
         .toList();
-    expect(themes, isNotEmpty,
-        reason: 'the band must build one VectorTileLayer per stacked pack');
+    expect(themes, hasLength(2),
+        reason: 'the band stacks one VectorTileLayer per pack — the stub stacks '
+            'two, exactly as ر107 registers two packs');
     for (final theme in themes) {
       expect(theme.backgroundColor(0), isNull,
           reason: 'a stacked theme that fills its tiles hides the layer below');

@@ -56,7 +56,7 @@ class BundledStyle {
 
 /// R114: a theme that is going to be STACKED must not carry a `background`
 /// layer — the renderer paints it even for a tile the pack refused
-/// (tile_rasterizer.dart:122-131), so the top layer would hide the shallow one
+/// (tile_rasterizer.dart:123-132), so the top layer would hide the shallow one
 /// everywhere outside its box. The opaque fill is `MapOptions.backgroundColor`,
 /// which is the same #101315. Enforced on the type so no producer — production
 /// or the R104 test stub — can hand a band a stacking-hostile theme. The id is

@@ -2115,7 +2115,7 @@ consulted, even though it holds the ground under the user's feet.
    rasterize — including one whose pack answered `TileResponseNotFound`: that
    answer still becomes a real, empty tile which reaches the rasterizer, where
    `BackgroundThemeLayer` draws its rect regardless of `data` and sets
-   `painted = true` (`tile_rasterizer.dart:122-131`). So the TOP (deep) layer
+   `painted = true` (`tile_rasterizer.dart:123-132`). So the TOP (deep) layer
    bakes an opaque `#101315` image over the shallow one everywhere outside its
    own box — the flat void R107 exists to kill. A theme with no `background`
    layer paints nothing for a refused tile (`painted == false` → `rasterize`
