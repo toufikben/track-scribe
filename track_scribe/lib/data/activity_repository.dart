@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 
+import 'package:track_scribe/data/activity_list_item.dart';
 import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
@@ -245,6 +246,50 @@ class ActivityRepository {
           ),
       ],
     );
+  }
+
+  /// خطة 3: what the history list reads — every non-deleted activity, newest
+  /// start first, with its totals and NONE of its points (ر117).
+  ///
+  /// `ORDER BY start_wall_millis DESC, id DESC`: the wall clock is the only
+  /// key that matches what the user saw while recording, and ر1 forbids using
+  /// it as a duration source, not as a display key. `id DESC` breaks a tie
+  /// between two rows stamped in the same millisecond, so the list cannot
+  /// reshuffle itself between two reads.
+  ///
+  /// Two SELECTs total: the activity rows, then the one-row `resume`
+  /// checkpoint to learn which of them is still open (ر121). `track_points` is
+  /// never opened here — that is the whole point of the return type.
+  Future<List<ActivityListItem>> listActivities() async {
+    final rows =
+        await (_db.select(_db.activities)
+              ..where((t) => t.isDeleted.equals(false))
+              ..orderBy([
+                (t) => OrderingTerm.desc(t.startWallMillis),
+                (t) => OrderingTerm.desc(t.id),
+              ]))
+            .get();
+    if (rows.isEmpty) return const [];
+    final openIds = {
+      for (final s in await (_db.select(
+        _db.trackState,
+      )..where((t) => t.key.equals('resume'))).get())
+        s.activityId,
+    };
+    return [
+      for (final r in rows)
+        ActivityListItem(
+          id: r.id,
+          sport: r.sport,
+          startWallMillis: r.startWallMillis,
+          distanceM: r.distanceM,
+          elapsedNanos: r.elapsedNanos,
+          fixCount: r.fixCount,
+          rejectedCount: r.rejectedCount,
+          mockDetected: r.mockDetected,
+          isOpen: openIds.contains(r.id),
+        ),
+    ];
   }
 
   /// R86: read one persisted on/off flag; an unwritten key returns [defaultValue].

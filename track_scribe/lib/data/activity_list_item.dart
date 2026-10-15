@@ -1,0 +1,41 @@
+/// One row of the history list (خطة 3 §1) — the activity's stored TOTALS and
+/// nothing else.
+///
+/// ر117: this type exists to make the list's cost visible in the code. The
+/// detail screen's `ActivitySummary` carries every `StoredPoint` of one
+/// activity, which is correct there (one activity at a time, released with the
+/// screen per ر116) and wrong here: a list read that returned summaries would
+/// hold every track the user ever recorded alive at once, on a 4 GB target
+/// whose tile raster cache wants the same memory.
+class ActivityListItem {
+  const ActivityListItem({
+    required this.id,
+    required this.sport,
+    required this.startWallMillis,
+    required this.distanceM,
+    required this.elapsedNanos,
+    required this.fixCount,
+    required this.rejectedCount,
+    required this.mockDetected,
+    required this.isOpen,
+  });
+
+  final int id;
+  final String sport;
+
+  /// Display metadata only — the same contract as `ActivitySummary`'s field
+  /// (ر1/R21): it orders and labels the list, and never becomes a duration.
+  final int startWallMillis;
+  final double distanceM;
+  final int elapsedNanos;
+  final int fixCount;
+  final int rejectedCount;
+  final bool mockDetected;
+
+  /// True while a `resume` checkpoint still names this activity, i.e. the
+  /// recording was paused or killed rather than stopped (ر12/R79). Its
+  /// `distanceM`/`elapsedNanos` are then whatever the LAST stopped write put
+  /// there, not the session's total, so the list marks the row «قيد التسجيل»
+  /// instead of presenting it as finished (ر121).
+  final bool isOpen;
+}
