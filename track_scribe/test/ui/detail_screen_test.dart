@@ -21,12 +21,17 @@ import '../support/stub_vector_style.dart';
 /// One point of the seed route: ~22 m of latitude per step, monotonic time,
 /// altitude from the caller (R78 stores what the fix measured, NULL if it did
 /// not).
-StoredPoint _p({required double lat, required int t, double? alt}) => StoredPoint(
+StoredPoint _p({
+  required double lat,
+  required int t,
+  double? alt,
+  WaypointType type = WaypointType.normal,
+}) => StoredPoint(
   lat: lat,
   lon: 3.04,
   timeNanos: t,
   accuracyM: 5,
-  type: WaypointType.normal,
+  type: type,
   altitudeM: alt,
 );
 
@@ -230,6 +235,49 @@ void main() {
 
     expect(find.byType(FlutterMap), findsOneWidget);
     expect(find.byType(GradedRouteLayer), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // ر115: the profile is a display surface like the route line and the camera
+  // fit, so it must be handed the SAME list those two already draw. One filter,
+  // at the widget boundary — never a second one inside the strip.
+  testWidgets('the elevation profile receives the filtered points, not the raw list', (
+    tester,
+  ) async {
+    final climb = _p(lat: 36.7500, t: 0, alt: 10);
+    final stop = _p(lat: 36.7501, t: 1_000_000_000, alt: 15, type: WaypointType.idle);
+    final spike = _p(lat: 40.0, t: 2_000_000_000, alt: 999, type: WaypointType.rejected);
+    final resumed = _p(lat: 36.7502, t: 3_000_000_000, alt: 20);
+    final raw = [climb, stop, spike, resumed];
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          mapStyleProvider.overrideWith((ref) => Future.value(style)),
+          activityDetailProvider.overrideWith(
+            (ref, id) => Future.value(_synthetic(points: raw)),
+          ),
+        ],
+        child: MaterialApp(home: ActivityDetailScreen(activityId: 7)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final strip = tester.widget<ElevationStrip>(find.byType(ElevationStrip));
+    // The rejected spike is gone; the ر5 idle stop and the order survive.
+    expect(strip.points, [climb, stop, resumed]);
+
+    final painters = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((c) => c.painter)
+        .whereType<ElevationStripPainter>()
+        .toList();
+    expect(painters, hasLength(1));
+    expect(painters.single.points, [climb, stop, resumed]);
+    // The false peak disappears with the spike: two segments, not the three the
+    // raw list strokes by pairing the rejected fix with both kept neighbours.
+    expect(drawableSegmentCount(raw), 3);
+    expect(drawableSegmentCount(painters.single.points), 2);
     expect(tester.takeException(), isNull);
   });
 }

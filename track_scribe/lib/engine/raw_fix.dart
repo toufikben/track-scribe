@@ -36,3 +36,12 @@ class StoredPoint {
   final double? altitudeM, speedMps, bearingDeg;
   double distanceTo(StoredPoint o) => haversineMeters(lat, lon, o.lat, o.lon);
 }
+
+/// The points a display surface may DRAW. Rejected spikes stay in the database as
+/// evidence of what the recorder refused, but every surface must refuse them
+/// identically: if the route line and the elevation profile disagree about which
+/// fixes exist, the profile shows jumps the rider never made (ر115).
+List<StoredPoint> displayablePoints(List<StoredPoint> points) => [
+  for (final p in points)
+    if (p.type != WaypointType.rejected) p,
+];

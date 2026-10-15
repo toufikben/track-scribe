@@ -115,7 +115,11 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
             ),
           ),
           const SizedBox(height: 8),
-          ElevationStrip(points: s.points),
+          // Filtered HERE, once (ر115): the strip's own `hasAltitudeProfile`,
+          // `drawableSegmentCount` and its painter loop are a shared trio that
+          // must all read one list — a second filter inside the strip would
+          // silently redefine what the segment count means.
+          ElevationStrip(points: displayablePoints(s.points)),
         ],
       ),
     );
@@ -138,8 +142,7 @@ class _DetailMap extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final style = ref.watch(mapStyleProvider);
     final route = [
-      for (final p in summary.points)
-        if (p.type != WaypointType.rejected) LatLng(p.lat, p.lon),
+      for (final p in displayablePoints(summary.points)) LatLng(p.lat, p.lon),
     ];
     final start = route.isEmpty ? null : route.first;
     final end = route.isEmpty ? null : route.last;

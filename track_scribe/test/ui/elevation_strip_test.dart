@@ -9,6 +9,12 @@ import 'package:track_scribe/ui/detail/elevation_strip.dart';
 StoredPoint _p(double lat, double lon, double? alt) => StoredPoint(
     lat: lat, lon: lon, timeNanos: 0, accuracyM: 5, type: WaypointType.normal, altitudeM: alt);
 
+StoredPoint _rejected(double lat, double lon, double? alt) => StoredPoint(
+    lat: lat, lon: lon, timeNanos: 0, accuracyM: 5, type: WaypointType.rejected, altitudeM: alt);
+
+StoredPoint _idle(double lat, double lon, double? alt) => StoredPoint(
+    lat: lat, lon: lon, timeNanos: 0, accuracyM: 5, type: WaypointType.idle, altitudeM: alt);
+
 void main() {
   test('gradeColor: flat is the dim end, steep saturates to the bright end', () {
     expect(gradeColor(0), ElevationStrip.flatColor);
@@ -84,5 +90,33 @@ void main() {
       ),
     );
     expect(find.text('لا توجد بيانات ارتفاع'), findsNothing);
+  });
+
+  // ر115: the route painter and the camera fit both drop `rejected` fixes, while
+  // the profile was handed the full list — so the jump the recorder refused was
+  // stroked against its kept neighbours as a peak the rider never made.
+  test('displayablePoints drops the spike the profile must not stroke', () {
+    final up = _p(0, 0, 10);
+    final spike = _rejected(0.0002, 0, 999);
+    final down = _p(0.0004, 0, 20);
+
+    // The defect, pinned first: unfiltered, the rejected fix pairs with BOTH kept
+    // neighbours, so the strip reports a segment the route never drew.
+    expect(drawableSegmentCount([up, spike, down]), 2);
+
+    // The law: the two kept points, in order, and one honest segment.
+    expect(displayablePoints([up, spike, down]), [up, down]);
+    expect(drawableSegmentCount(displayablePoints([up, spike, down])), 1);
+  });
+
+  test('displayablePoints removes only rejected — the ر5 idle gaps survive', () {
+    final normal = _p(0, 0, 10);
+    final gap = _idle(0.0002, 0, 15);
+    final after = _p(0.0004, 0, 20);
+    final spike = _rejected(0.0006, 0, 999);
+
+    // An idle marker is a real stop the rider made, not GPS noise: the filter's
+    // sole exclusion is `rejected`, and the surviving order is untouched.
+    expect(displayablePoints([normal, gap, after, spike]), [normal, gap, after]);
   });
 }

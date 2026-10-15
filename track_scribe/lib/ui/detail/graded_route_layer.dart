@@ -84,8 +84,10 @@ class _GradedRoutePainter extends CustomPainter {
   final MapCamera camera;
   final double strokeWidth;
 
-  List<StoredPoint> get _route =>
-      [for (final p in points) if (p.type != WaypointType.rejected) p];
+  /// The one display filter (ر115): the route draws exactly what
+  /// [displayablePoints] keeps, so no other surface can disagree about which
+  /// fixes exist.
+  List<StoredPoint> get _route => displayablePoints(points);
 
   @override
   void paint(Canvas canvas, Size size) {
