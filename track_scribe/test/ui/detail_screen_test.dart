@@ -50,6 +50,20 @@ ActivitySummary _synthetic({required List<StoredPoint> points, int id = 7}) =>
       points: points,
     );
 
+/// ر116: the same repository, with the detail read counted, so the CACHE's
+/// lifetime becomes a measured fact instead of a claim about Riverpod.
+class _CountingRepo extends ActivityRepository {
+  _CountingRepo(super.db);
+
+  int reads = 0;
+
+  @override
+  Future<ActivitySummary?> loadActivityWithPoints(int activityId) {
+    reads++;
+    return super.loadActivityWithPoints(activityId);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -284,5 +298,37 @@ void main() {
     expect(drawableSegmentCount(raw), 3);
     expect(drawableSegmentCount(painters.single.points), 2);
     expect(tester.takeException(), isNull);
+  });
+
+  // ر116: an activity summary carries EVERY stored point, and the family key is
+  // a row id — an unbounded, user-grown value. On the non-autoDispose default
+  // (verified in riverpod 3.4.3 `future_provider.dart:106`, where
+  // `isAutoDispose` defaults to `false`) every activity opened in a session
+  // kept its full track point list alive until the app died. The detail screen
+  // is the provider's only listener, so the cache must end with the screen.
+  test('the detail cache is released when the last listener leaves', () async {
+    final counting = _CountingRepo(db);
+    final container = ProviderContainer(
+      overrides: [activityRepositoryProvider.overrideWithValue(counting)],
+    );
+    addTearDown(container.dispose);
+
+    ProviderSubscription<AsyncValue<ActivitySummary>> open() =>
+        container.listen(activityDetailProvider(seededId), (_, _) {});
+
+    final first = open();
+    await container.read(activityDetailProvider(seededId).future);
+    expect(counting.reads, 1);
+    // Same id, still-listening: the family answers from cache, no second read.
+    await container.read(activityDetailProvider(seededId).future);
+    expect(counting.reads, 1);
+
+    first.close();
+    await container.pump();
+
+    final again = open();
+    await container.read(activityDetailProvider(seededId).future);
+    expect(counting.reads, 2, reason: 'the point list must not outlive the screen');
+    again.close();
   });
 }

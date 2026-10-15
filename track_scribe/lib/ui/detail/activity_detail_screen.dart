@@ -27,15 +27,27 @@ import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
 /// Riverpod 3's default retry would re-run a failed read for ~38 s with the
 /// state stuck in AsyncLoading, so the error branch could not be reached —
 /// least of all inside `testWidgets`, whose fake clock owns every timer.
-final activityDetailProvider = FutureProvider.family<ActivitySummary, int>(
-  (ref, id) => ref
-      .watch(activityRepositoryProvider)
-      .loadActivityWithPoints(
-        id,
-      )
-      .then((s) => s ?? (throw StateError('activity $id not found'))),
-  retry: (retryCount, error) => null,
-);
+///
+/// ر116: `autoDispose`, because the family key is a row id the user grows one
+/// activity at a time, and the value carries EVERY stored point of that
+/// activity. On Riverpod's default (`isAutoDispose = false`, verified in
+/// riverpod-3.4.3 `providers/future_provider.dart:106`) the detail screen's
+/// only listener leaving left each opened track resident until the process
+/// died — on a 4 GB target device, with the tile raster cache wanting the same
+/// memory. This is the app's only `.family`, so it is the only such cache.
+/// The cost is one `CircularProgressIndicator` frame when the same activity is
+/// re-opened, and the read is a local SQLite query behind a branch the screen
+/// already renders.
+final activityDetailProvider =
+    FutureProvider.autoDispose.family<ActivitySummary, int>(
+      (ref, id) => ref
+          .watch(activityRepositoryProvider)
+          .loadActivityWithPoints(
+            id,
+          )
+          .then((s) => s ?? (throw StateError('activity $id not found'))),
+      retry: (retryCount, error) => null,
+    );
 
 /// The finished-activity screen (spec §12.1): the recorded totals, the route
 /// graded by speed with its direction arrow and start/end markers, the line
