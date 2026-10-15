@@ -1,5 +1,6 @@
 import 'dart:io' show File;
 import 'dart:math' as math;
+import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart' show rootBundle;
@@ -7,8 +8,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_map_vector_tiles/flutter_map_vector_tiles.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:pmtiles/pmtiles.dart';
+import 'package:track_scribe/data/tile_store.dart' show kBundledTileNames;
 import 'package:track_scribe/ui/basemap/local_pmtiles_provider.dart';
-import 'package:track_scribe/ui/basemap/map_style_provider.dart' show stackProviders;
+import 'package:track_scribe/ui/basemap/map_style_provider.dart'
+    show readBundledStyle, stackProviders;
 
 TileKey _tileKeyAt(int z, double lat, double lon) {
   final n = 1 << z;
@@ -20,14 +23,22 @@ TileKey _tileKeyAt(int z, double lat, double lon) {
   return TileKey(z, x, y);
 }
 
+/// `PlatformAssetBundle.load` does NOT cache ByteData, and `MemoryAt` (what
+/// `fromBytes` builds) retains every copy it is handed with a no-op `close()` —
+/// so the 53,718,750 B country pack would cross the asset channel once per
+/// call site. One buffer per asset name: the archives share it (read-only),
+/// which is safe precisely because their close does nothing.
+final _packBytes = <String, Future<Uint8List>>{};
+
 /// Loads a bundled pack as an archive, the way the app does at runtime.
 /// rootBundle.load never runs inside a fake-async zone here (plain `test`,
 /// and the asset completes in real time).
 Future<PmTilesArchive> openAsset(String name) async {
-  final data = await rootBundle.load('assets/tiles/$name');
-  return PmTilesArchive.fromBytes(
-    data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
-  );
+  final bytes = _packBytes.putIfAbsent(name, () async {
+    final data = await rootBundle.load('assets/tiles/$name');
+    return data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+  });
+  return PmTilesArchive.fromBytes(await bytes);
 }
 
 void main() {
@@ -242,5 +253,42 @@ void main() {
     expect(served, isA<TileResponseNotFound>());
 
     provider.dispose(); // disposing an archive whose pool is already closed
+  });
+
+  // ر107 review I-1: a pack opened on the way to the style has NO owner until
+  // the caller registers `ref.onDispose(bundled.dispose)` — which only happens
+  // once the read succeeds. So a failed read must close every pack it opened,
+  // or the app settles on the GridBasemap fallback with both packs stranded for
+  // the session. File-backed over the real assets, exactly like the runtime.
+  test('a failed style read closes the packs it opened instead of stranding them',
+      () async {
+    List<LocalPmTilesProvider>? opened;
+    await expectLater(
+      readBundledStyle(
+        'assets/tiles',
+        readStyle: (providers) async {
+          opened = providers;
+          // The documented offline failure: StyleReader drops every source it
+          // cannot resolve and then throws (style_reader.dart:221-223).
+          throw const StyleReaderException('style contains no usable sources');
+        },
+      ),
+      throwsA(isA<StyleReaderException>()),
+    );
+
+    expect(opened, hasLength(kBundledTileNames.length));
+    for (final provider in opened!) {
+      // Both tiles below are proven served earlier in this file (the deep
+      // pack's own town at z14, the country pack at Tamanrasset z12): a
+      // provider nobody closed keeps answering them for the whole session.
+      final held = provider.maximumZoom == 14
+          ? _tileKeyAt(14, 36.2537, 2.2328)
+          : _tileKeyAt(12, 22.8, 5.5);
+      expect(
+        await provider.load(held),
+        isA<TileResponseCancelled>(),
+        reason: 'the pack this provider holds open was never closed',
+      );
+    }
   });
 }

@@ -144,6 +144,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // ر107 review I-2: the replay map's camera ceiling must be the SAME shared
+  // display ceiling the recording band uses. A pack ceiling is a DATA ceiling
+  // (the provider clamps to it, core/tile_zoom.dart); capping the camera at 14
+  // also clamps the one-point fit's `CameraFit.coordinates(maxZoom: 16)` below,
+  // making it dead configuration.
+  testWidgets('the replay map caps the camera at the shared display ceiling, not the pack ceiling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(seededApp(activityId: seededId));
+    await tester.pumpAndSettle();
+
+    final options = tester.widget<FlutterMap>(find.byType(FlutterMap)).options;
+    expect(options.maxZoom, kMapDisplayMaxZoom);
+    expect(
+      options.maxZoom,
+      greaterThan(style.maximumZoom.toDouble()),
+      reason: 'the detail screen must not sit at a shallower ceiling than the band',
+    );
+  });
+
   testWidgets('shows the load error state for a missing activity', (tester) async {
     // An empty DB: `loadActivityWithPoints` returns null for row 999 and the
     // family turns that into its own error, which is what the error branch is

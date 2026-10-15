@@ -80,6 +80,26 @@ void main() {
     );
   });
 
+  // ر107 review I-2: the camera cap is the DISPLAY ceiling, one constant shared
+  // by both bands. A pack's `maximumZoom` is a DATA ceiling the provider
+  // clamps to (core/tile_zoom.dart), so the camera must stay above it — free
+  // overzoom past the deepest pack is what the ر107 fix rests on.
+  testWidgets('the band caps the camera at the shared display ceiling, above the packs', (
+    tester,
+  ) async {
+    final points = [_p(36.7500, 3.0400), _p(36.7520, 3.0420)];
+    await tester.pumpWidget(wrap(VectorMapBand(points: points, current: points.last)));
+    await tester.pumpAndSettle();
+
+    final options = tester.widget<FlutterMap>(find.byType(FlutterMap)).options;
+    expect(options.maxZoom, kMapDisplayMaxZoom);
+    expect(
+      options.maxZoom,
+      greaterThan(style.maximumZoom.toDouble()),
+      reason: 'free overzoom past the deepest pack is the ر107 mechanism',
+    );
+  });
+
   testWidgets('IDLE point draws the idle badge and no halo', (tester) async {
     final idle = _p(36.7520, 3.0420, type: WaypointType.idle);
     await tester.pumpWidget(wrap(VectorMapBand(points: [idle], current: idle)));

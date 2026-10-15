@@ -11,6 +11,11 @@ import 'package:track_scribe/ui/basemap/local_pmtiles_provider.dart';
 /// one vector source). One place, never a duplicated literal.
 const kBundledStyleSourceId = 'openmaptiles';
 
+/// The camera ceiling both map bands use. A pack's own `maximumZoom` is the
+/// DATA ceiling, applied by the provider (core/tile_zoom.dart), so panning past
+/// the deepest pack still overzooms its tiles — one constant, no per-band drift.
+const double kMapDisplayMaxZoom = 18;
+
 /// The render input of the map bands: one style theme + sprites, and ONE
 /// [TileProviders] entry per bundled pack, shallowest first (ر107). Each
 /// entry binds the style's source id to its own archive's provider, so every
@@ -28,7 +33,8 @@ class BundledStyle {
   final SpriteAtlas? sprites;
   final List<TileProviders> layers;
 
-  /// Deepest header zoom across the stacked packs — the map's honest ceiling.
+  /// Deepest header zoom across the stacked packs: the DATA ceiling, which the
+  /// provider clamps to. The camera's display ceiling is [kMapDisplayMaxZoom].
   int get maximumZoom => layers
       .expand((l) => l.providers.values)
       .map((provider) => provider.maximumZoom)
@@ -68,13 +74,65 @@ List<LocalPmTilesProvider> stackProviders(
   ];
 }
 
+/// Opens every registered pack under [tilesDir], stacks them (R103's order) and
+/// reads [readStyle] over the result, returning the bands' render input.
+///
+/// A pack opened here has no owner until the caller registers
+/// `ref.onDispose(bundled.dispose)` on success, so a failure must close what it
+/// opened before the error escapes (ر107 review I-1) — else the app sits on the
+/// GridBasemap fallback with both packs stranded for the session.
+Future<BundledStyle> readBundledStyle(
+  String tilesDir, {
+  required Future<Style> Function(List<LocalPmTilesProvider> providers)
+      readStyle,
+}) async {
+  final opened = <PmTilesArchive>[];
+  var providers = const <LocalPmTilesProvider>[];
+  try {
+    final packs = <({PmTilesArchive archive, String cacheKey})>[];
+    for (final name in kBundledTileNames) {
+      final archive = await PmTilesArchive.from(p.join(tilesDir, name));
+      opened.add(archive);
+      packs.add((
+        archive: archive,
+        // Distinct per pack: two providers sharing a cacheKey are assumed
+        // to serve identical bytes, including across layers.
+        cacheKey: 'pmtiles:$name',
+      ));
+    }
+    providers = stackProviders(packs);
+    final style = await readStyle(providers);
+    return BundledStyle(
+      theme: style.theme,
+      sprites: style.sprites,
+      layers: [
+        for (final provider in providers)
+          TileProviders({kBundledStyleSourceId: provider}),
+      ],
+    );
+  } catch (_) {
+    // One owner per archive: raw until stacked, then the providers close them
+    // (a second `close()` would double-free the FileAt pool).
+    if (providers.isEmpty) {
+      for (final archive in opened) {
+        await archive.close();
+      }
+    } else {
+      for (final provider in providers) {
+        provider.dispose();
+      }
+    }
+    rethrow;
+  }
+}
+
 /// One app-wide compiled style: bundled packs + bundled localized style,
 /// zero network (cache: false, resolveProvider, no http anywhere).
 ///
-/// Packs come from [kBundledTileNames] (R103): this code opens *every* name in
-/// the registry and never hardcodes a pack list, so adding a country or world
-/// pack is one name in `tile_store.dart` + one asset file. [stackProviders]
-/// orders the layers from the headers.
+/// Packs come from [kBundledTileNames] (R103): [readBundledStyle] opens *every*
+/// name in the registry and never hardcodes a pack list, so adding a country or
+/// world pack is one name in `tile_store.dart` + one asset file.
+/// [stackProviders] orders the layers from the headers.
 ///
 /// `resolveProvider` MUST answer the style's source id: [StyleReader] falls
 /// through to the document's hosted TileJSON URL when it returns null — a
@@ -87,28 +145,14 @@ final mapStyleProvider = FutureProvider<BundledStyle>(
   (ref) async {
     if (kBundledTileNames.isEmpty) throw StateError('no tile packs registered');
     final tilesDir = await ref.watch(tileStoreProvider).ensureBundledTiles();
-    final providers = stackProviders([
-      for (final name in kBundledTileNames)
-        (
-          archive: await PmTilesArchive.from(p.join(tilesDir, name)),
-          // Distinct per pack: two providers sharing a cacheKey are assumed
-          // to serve identical bytes, including across layers.
-          cacheKey: 'pmtiles:$name',
-        ),
-    ]);
-    final style = await StyleReader(
-      uri: 'asset://assets/styles/dark.json',
-      cache: false,
-      resolveProvider: (id) async =>
-          id == kBundledStyleSourceId ? providers.last : null,
-    ).read();
-    final bundled = BundledStyle(
-      theme: style.theme,
-      sprites: style.sprites,
-      layers: [
-        for (final provider in providers)
-          TileProviders({kBundledStyleSourceId: provider}),
-      ],
+    final bundled = await readBundledStyle(
+      tilesDir,
+      readStyle: (providers) => StyleReader(
+        uri: 'asset://assets/styles/dark.json',
+        cache: false,
+        resolveProvider: (id) async =>
+            id == kBundledStyleSourceId ? providers.last : null,
+      ).read(),
     );
     // NOT `style.dispose`: it would dispose the bound provider and the
     // sprites a second time past BundledStyle's single ownership.

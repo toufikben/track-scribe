@@ -166,9 +166,7 @@ class _DetailMap extends ConsumerWidget {
                           maxZoom: 16,
                         ),
                   minZoom: 2,
-                  // The deepest bundled pack's ceiling, not a literal: past it
-                  // there is nothing to overzoom either (ر107).
-                  maxZoom: s.maximumZoom.toDouble(),
+                  maxZoom: kMapDisplayMaxZoom,
                   backgroundColor: Palette.bg,
                 ),
                 children: [

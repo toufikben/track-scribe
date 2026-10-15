@@ -111,7 +111,7 @@ class _VectorMapBandState extends ConsumerState<VectorMapBand> {
                           : LatLng(current.lat, current.lon),
                       initialZoom: 16,
                       minZoom: 2,
-                      maxZoom: 18,
+                      maxZoom: kMapDisplayMaxZoom,
                       backgroundColor: Palette.bg,
                       onPositionChanged: (camera, hasGesture) {
                         if (hasGesture) setState(() => _follow = false);
