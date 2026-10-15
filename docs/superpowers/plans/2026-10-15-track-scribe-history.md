@@ -36,6 +36,7 @@
 - **ر120 — no climb column until ر11 exists.** `climb_m` is a schema default of 0, and a row that prints «0 م صعود» for a real hill is a lie of the same family ر99–ر101 were written against.
 - **ر121 — an activity that still has a `resume` checkpoint is listed and marked «قيد التسجيل», never hidden.** A ColorOS kill leaves such a row (that is ر12/R79's whole design). Hiding it would read as data loss to the user; printing it as a finished activity would present totals that `finishActivity` has not yet written. The marker is the honest third answer.
 - **ر122 — no delete UI in this plan.** `is_deleted` is read (excluded) but never written; deleting a recording is irreversible and the owner has not asked for it. Cost: a user cannot prune the list yet.
+- **ر123 — an open row prints the checkpoint's measured totals, never the unfinalized row's zeros** (Task 1 review, finding I-3). A never-finished activity still holds `distance_m = 0` / `elapsed_nanos = 0` in `activities` (`finishActivity` is what writes the real totals), while the `track_state` row `listActivities()` already loads for the open-set holds `distanceM` (cumulative) and `lastElapsedNanos` (R81's cross-session sum). So `listActivities()` returns those two from the checkpoint for `isOpen` rows: «قيد التسجيل» then shows 120 m · 1:00 — measured, one checkpoint stale at worst — instead of `0 م · 0:00`, an unmeasured zero the honesty law forbids. `fixCount` / `rejectedCount` / `mockDetected` have no checkpoint column, so they stay the unfinalized row's, which is why no view may render them for an open row. Cost if wrong: the row's distance lags the live session by the checkpoint cadence; the label discloses that it is not a finished activity.
 
 ## File structure
 
@@ -293,6 +294,15 @@ Add to `track_scribe/lib/data/activity_repository.dart`, after `loadActivityWith
 ```
 
 - [ ] **Step 5: Run the file again, then the whole suite**
+
+> **Amended by ر123 (Task 1 review, finding I-3).** The block above is what shipped in
+> `4fb38c5`; it reports an open activity's totals from the `activities` row, which for a
+> never-finished activity holds the unmeasured zeros. The fix round after this review
+> replaces `openIds` (a set) with a checkpoint map and takes `distanceM` / `elapsedNanos`
+> from `checkpoints[r.id]` for `isOpen` rows, adds a fifth test for the `id DESC` tie-break,
+> and varies `fixCount` / `rejectedCount` / `mockDetected` per seed so all nine fields are
+> asserted. Task 3 consumes the signatures exactly as written above — the numbers behind
+> `isOpen` rows change, the contract does not.
 
 Run: `flutter test test/data/history_repository_test.dart` → expect 4 passes.
 Run: `flutter test` → expect **203+ passing** (199 today + 4 new), 1 skipped, `All tests passed!`.
