@@ -33,9 +33,14 @@ class ActivityListItem {
   final bool mockDetected;
 
   /// True while a `resume` checkpoint still names this activity, i.e. the
-  /// recording was paused or killed rather than stopped (ر12/R79). Its
-  /// `distanceM`/`elapsedNanos` are then whatever the LAST stopped write put
-  /// there, not the session's total, so the list marks the row «قيد التسجيل»
-  /// instead of presenting it as finished (ر121).
+  /// recording was paused or killed rather than stopped (ر12/R79). For such a
+  /// row `distanceM`/`elapsedNanos` are the CHECKPOINT's measured totals
+  /// (ر123): the `activities` row itself still holds the schema defaults
+  /// 0 m / 0 ns — unmeasured numbers no view may print («لا نطبع رقمًا لم
+  /// يُقس») — so the list marks the row «قيد التسجيل» instead of presenting
+  /// it as finished (ر121). The checkpoint table carries no per-fix columns
+  /// (database.dart:44-68), so `fixCount`/`rejectedCount`/`mockDetected` stay
+  /// the unfinalized row's defaults — that is exactly why a list screen must
+  /// not render them for an open row.
   final bool isOpen;
 }

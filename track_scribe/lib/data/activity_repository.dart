@@ -258,8 +258,16 @@ class ActivityRepository {
   /// reshuffle itself between two reads.
   ///
   /// Two SELECTs total: the activity rows, then the one-row `resume`
-  /// checkpoint to learn which of them is still open (ر121). `track_points` is
-  /// never opened here — that is the whole point of the return type.
+  /// checkpoint to learn which of them is still open (ر121) — and, per ر123,
+  /// to SOURCE the two totals of an open row. A never-finished activity still
+  /// holds the schema defaults 0 m / 0 ns in its `activities` row, so for
+  /// `isOpen` rows the stored row values are NOT the source of truth and the
+  /// checkpoint's measured `distanceM`/`lastElapsedNanos` are returned
+  /// instead. The checkpoint table carries no per-fix columns
+  /// (database.dart:44-68), so `fixCount`/`rejectedCount`/`mockDetected` stay
+  /// the unfinalized row's defaults — which is why no view may render them
+  /// for an open row. `track_points` is never opened here — that is the whole
+  /// point of the return type.
   Future<List<ActivityListItem>> listActivities() async {
     final rows =
         await (_db.select(_db.activities)
@@ -270,11 +278,11 @@ class ActivityRepository {
               ]))
             .get();
     if (rows.isEmpty) return const [];
-    final openIds = {
-      for (final s in await (_db.select(
-        _db.trackState,
-      )..where((t) => t.key.equals('resume'))).get())
-        s.activityId,
+    final checkpoints = {
+      for (final s in await (_db.select(_db.trackState)
+            ..where((t) => t.key.equals('resume')))
+          .get())
+        s.activityId: s,
     };
     return [
       for (final r in rows)
@@ -282,12 +290,18 @@ class ActivityRepository {
           id: r.id,
           sport: r.sport,
           startWallMillis: r.startWallMillis,
-          distanceM: r.distanceM,
-          elapsedNanos: r.elapsedNanos,
+          // ر123: an activity named by a resume checkpoint has never been
+          // finished, so its `activities` row still holds the schema defaults
+          // 0 m / 0 ns — numbers nobody measured. The checkpoint the open-set
+          // lookup already loaded carries the MEASURED totals (distanceM is
+          // cumulative, lastElapsedNanos is R81's cross-session sum), so the
+          // «قيد التسجيل» row prints those instead of an unmeasured zero.
+          distanceM: checkpoints[r.id]?.distanceM ?? r.distanceM,
+          elapsedNanos: checkpoints[r.id]?.lastElapsedNanos ?? r.elapsedNanos,
           fixCount: r.fixCount,
           rejectedCount: r.rejectedCount,
           mockDetected: r.mockDetected,
-          isOpen: openIds.contains(r.id),
+          isOpen: checkpoints.containsKey(r.id),
         ),
     ];
   }
