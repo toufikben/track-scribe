@@ -162,4 +162,22 @@ void main() {
     expect(bundled.theme.layers.length, raw.theme.layers.length - 1,
         reason: 'exactly the background layer is dropped — nothing else');
   });
+
+  // R104 M-4: the disposal law above was proven for production only. The stub
+  // that every widget test renders with disposed nothing at all — an empty
+  // `dispose()` — so a `BundledStyle` that forgot one of its two stacked layers
+  // would have leaked past every test in the suite. Counting makes the fake
+  // assertible: both providers, reached through the one path, exactly once each.
+  test('the stub style disposes every provider it stacked, exactly once',
+      () async {
+    final (:style, :providers) = await loadStubVectorStyleWithProviders();
+    expect(providers, hasLength(2));
+    expect(providers.map((p) => p.disposeCalls), [0, 0],
+        reason: 'nothing is disposed before the caller asks');
+
+    style.dispose();
+
+    expect(providers.map((p) => p.disposeCalls), [1, 1],
+        reason: 'BundledStyle.dispose is the single owner of both layers');
+  });
 }
