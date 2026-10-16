@@ -18,6 +18,13 @@ class AppTheme {
           surface: Palette.surface,
           primary: Palette.accent,
           onPrimary: Palette.onAccent,
+          // The AppBar action icon resolves its colour from
+          // `onSurfaceVariant` (app_bar.dart:946,963-969); `ColorScheme.dark()`
+          // seeds that pair with raw `Colors.white`, which the contrast law
+          // never certified. Route both through `Palette.text` so the icon
+          // pair is the certified text/bg one everywhere.
+          onSurface: Palette.text,
+          onSurfaceVariant: Palette.text,
           error: Palette.danger,
           errorContainer: Palette.danger,
           onError: Palette.text,

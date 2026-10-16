@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/theme/palette.dart';
+import 'package:track_scribe/theme/theme.dart';
 
 void main() {
   test('the dark palette obeys the contrast law, not taste', () {
@@ -33,5 +34,16 @@ void main() {
       greaterThan(4.5),
     );
     expect(contrastRatio(Palette.accent, Palette.surface), greaterThan(4.5));
+  });
+
+  test('the app bar icon pair is a certified token, not a scheme default', () {
+    // AppBar actions resolve their icon colour from `colorScheme
+    // .onSurfaceVariant` (app_bar.dart:946,963-969), which falls back to
+    // `onSurface`. `ColorScheme.dark()` seeds both with raw `Colors.white` —
+    // an uncertified colour the palette law never measured. The theme must
+    // route them through `Palette.text` so the icon pair is the certified
+    // text/bg one (>16:1, pinned above) everywhere, not a per-widget colour.
+    expect(AppTheme.dark.colorScheme.onSurface, Palette.text);
+    expect(AppTheme.dark.colorScheme.onSurfaceVariant, Palette.text);
   });
 }
