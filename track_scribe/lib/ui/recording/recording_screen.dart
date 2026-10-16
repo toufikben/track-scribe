@@ -12,9 +12,11 @@ import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
 import 'package:track_scribe/ui/recording/widgets/storage_error_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/stop_button.dart';
 
-/// Layout B (spec §5): map on 40 % of the body height (flex 4), stat panel on
-/// the remaining 60 % (flex 6), sport chips and the GPS banner floating over
-/// the map, one wide ≥ 56 dp start/stop control at the bottom.
+/// Layout B2 (spec §5, amended by ر124 — owner order 2026-10-16 «الخريطة
+/// تحتل الجزء الأكبر من الواجهة والآخرين في أسفل الواجهة»): map on 60 % of the
+/// body height (flex 6), stat panel on the remaining 40 % (flex 4), sport chips
+/// and the GPS banner floating over the map, one wide ≥ 56 dp start/stop control
+/// at the bottom.
 ///
 /// R23: RTL is set by this explicit `Directionality` — no
 /// flutter_localizations dependency anywhere in the app.
@@ -32,7 +34,7 @@ class RecordingScreen extends ConsumerWidget {
         elevation: 0,
         title: Text('تسجيل', style: Theme.of(context).textTheme.titleLarge),
         // ر119: the entry point is an AppBar action, never a bottom bar — the
-        // AppBar lives outside the 40/60 split that layout B's tests measure.
+        // AppBar lives outside the 60/40 split that layout B2's tests measure.
         actions: [
           IconButton(
             key: const Key('history-button'),
@@ -50,7 +52,7 @@ class RecordingScreen extends ConsumerWidget {
           child: Column(
             children: [
               Expanded(
-                flex: 4,
+                flex: 6,
                 child: Stack(
                   children: [
                     Positioned.fill(
@@ -75,7 +77,7 @@ class RecordingScreen extends ConsumerWidget {
                 ),
               ),
               Expanded(
-                flex: 6,
+                flex: 4,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
                   child: Column(

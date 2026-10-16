@@ -80,7 +80,7 @@ void main() {
 
   tearDownAll(() => style.dispose());
 
-  testWidgets('layout B: half map + big number panel, RTL, dark', (
+  testWidgets('layout B2: dominant map on top, stat panel below, RTL, dark', (
     tester,
   ) async {
     // R20: the tester.binding.window form is deprecated on Flutter 3.47.
@@ -108,16 +108,16 @@ void main() {
       Palette.bg,
     );
 
-    // Layout contract (spec §5): the map takes 40 % of the body Column and
-    // the panel 60 % (Expanded flex 4 / 6). R104: the band is now
-    // VectorMapBand — its rect is the flex-4 area, attribution included.
+    // Layout contract (ر124, supersedes spec layout B): the map takes 60 % of
+    // the body Column and the panel 40 % (Expanded flex 6 / 4). R104: the band
+    // is now VectorMapBand — its rect is the flex-6 area, attribution included.
     final bodyColumn = tester
         .element(find.byType(VectorMapBand))
         .findAncestorWidgetOfExactType<Column>();
     expect(bodyColumn, isNotNull);
     final columnHeight = tester.getSize(find.byWidget(bodyColumn!)).height;
     final mapHeight = tester.getSize(find.byType(VectorMapBand)).height;
-    expect(mapHeight, closeTo(columnHeight * 0.4, 1.0));
+    expect(mapHeight, closeTo(columnHeight * 0.6, 1.0));
 
     // Before start the counters render real formatted values, not
     // placeholders. The distance appears twice (big number + panel row).
@@ -317,10 +317,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  // ر119: history is reachable from the recorder without touching layout B.
-  // The AppBar sits outside the 40/60 split, which the test at line 110 already
-  // measures (`mapHeight ≈ columnHeight * 0.4`) — so if this button had stolen
-  // body height, THAT test would fail first. Nothing here re-pins a number that
+  // ر119: history is reachable from the recorder without touching the layout.
+  // The AppBar sits outside the 60/40 split that the measuring test above pins
+  // (`mapHeight ≈ columnHeight * 0.6`) — so if this button had stolen body
+  // height, THAT test would fail first. Nothing here re-pins a number that
   // is already pinned; it pins the wire.
   testWidgets('the app bar opens the activity history', (tester) async {
     tester.view.physicalSize = const Size(1080, 2340);
