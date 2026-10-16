@@ -12,6 +12,7 @@ import 'package:track_scribe/ui/app.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/basemap/vector_map_band.dart';
 import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
+import 'package:track_scribe/ui/history/history_screen.dart';
 
 import '../support/stub_vector_style.dart';
 
@@ -313,6 +314,53 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ActivityDetailScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // ر119: history is reachable from the recorder without touching layout B.
+  // The AppBar sits outside the 40/60 split, which the test at line 110 already
+  // measures (`mapHeight ≈ columnHeight * 0.4`) — so if this button had stolen
+  // body height, THAT test would fail first. Nothing here re-pins a number that
+  // is already pinned; it pins the wire.
+  testWidgets('the app bar opens the activity history', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    final db = await _seededDb();
+    addTearDown(db.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          mapStyleProvider.overrideWith((ref) => Future.value(style)),
+        ],
+        child: const TrackScribeApp(),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // On a fresh install the recorder's own AppBar gains one action…
+    expect(find.byKey(const Key('history-button')), findsOneWidget);
+    expect(find.byType(HistoryScreen), findsNothing);
+
+    await tester.tap(find.byKey(const Key('history-button')));
+    // The brief's single `pump(400 ms)` here fails: `Navigator.push` inserts its
+    // OverlayEntry from a POST-frame callback, so the pushed route needs one
+    // frame to exist before the 400 ms transition pump can build it. Measured
+    // (probe run): tap → pump(400 ms) finds 0 HistoryScreen; tap → pump() →
+    // pump(400 ms) finds it with its title and its empty state. The frame is
+    // added, no assertion is weakened, and `pumpAndSettle` is deliberately NOT
+    // used — the list's loading `CircularProgressIndicator` ticks forever under
+    // the fake clock if the read has not landed, which is the pump-timeout the
+    // brief rules out.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // …and lands on the list, reading the SAME database — empty, because this
+    // DB was seeded with nothing but the onboarded flag.
+    expect(find.byType(HistoryScreen), findsOneWidget);
+    expect(find.text('سجل الأنشطة'), findsOneWidget);
+    expect(find.text('لا أنشطة بعد'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

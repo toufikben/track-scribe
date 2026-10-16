@@ -5,6 +5,7 @@ import 'package:track_scribe/state/recording_controller.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/vector_map_band.dart';
 import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
+import 'package:track_scribe/ui/history/history_screen.dart';
 import 'package:track_scribe/ui/recording/widgets/gps_status_banner.dart';
 import 'package:track_scribe/ui/recording/widgets/sport_chips.dart';
 import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
@@ -30,6 +31,18 @@ class RecordingScreen extends ConsumerWidget {
         backgroundColor: Palette.bg,
         elevation: 0,
         title: Text('تسجيل', style: Theme.of(context).textTheme.titleLarge),
+        // ر119: the entry point is an AppBar action, never a bottom bar — the
+        // AppBar lives outside the 40/60 split that layout B's tests measure.
+        actions: [
+          IconButton(
+            key: const Key('history-button'),
+            tooltip: 'سجل الأنشطة',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const HistoryScreen()),
+            ),
+            icon: const Icon(Icons.history),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Directionality(
