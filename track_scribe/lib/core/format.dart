@@ -51,19 +51,30 @@ class Format {
   /// most recent CALENDAR days.
   ///
   /// ر1/R21 applies to this function in full: the wall clock is read to label
-  /// and order a row, never to produce a duration. The day difference below
-  /// chooses which WORD to print and nothing else — which is why it compares
-  /// midnight-to-midnight `DateTime`s instead of subtracting the two stamps
-  /// (23:50 recorded, 00:10 read is one day ago, not twenty minutes ago).
+  /// and order a row, never to produce a duration — the day count below chooses
+  /// which WORD to print and nothing else. A calendar day is what «اليوم»/«أمس»
+  /// mean, so the stamps are reduced to their local `year/month/day` fields
+  /// rather than subtracted as instants: 23:50 recorded, 00:10 read is one day
+  /// ago, not twenty minutes ago. That subtraction runs in UTC — see the body —
+  /// because a local midnight-to-midnight gap is not always 24 h.
   ///
   /// `now` is injectable so the test does not depend on when it runs.
   static String activityDate(int startWallMillis, {DateTime? now}) {
     final start = DateTime.fromMillisecondsSinceEpoch(startWallMillis);
-    final today = now ?? DateTime.now();
-    final dayDiff = DateTime(today.year, today.month, today.day).difference(
-      DateTime(start.year, start.month, start.day),
-    );
-    final int days = dayDiff.inDays;
+    final reference = now ?? DateTime.now();
+    // Whole CALENDAR days, counted in UTC so a daylight step that lands on local midnight
+    // (Asia/Beirut, Asia/Amman, America/Santiago, America/Asuncion, America/Havana: 23 h or
+    // 25 h between two local midnights) can never truncate to the wrong day number. The
+    // operands are the local `year/month/day` fields, so «أي يوم» is still the user's local
+    // calendar day; only the subtraction is zone-free. This value chooses which WORD to
+    // print and nothing else — ر1/R21 is untouched: no duration is derived from the wall
+    // clock anywhere in this file.
+    final calendarDayGap = DateTime.utc(
+      reference.year,
+      reference.month,
+      reference.day,
+    ).difference(DateTime.utc(start.year, start.month, start.day));
+    final days = calendarDayGap.inDays;
     final when = days == 0
         ? 'اليوم'
         : days == 1

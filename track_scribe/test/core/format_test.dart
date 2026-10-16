@@ -68,6 +68,24 @@ void main() {
       );
     });
 
+    // ر118 buys us "no locale package" at the price of owning twelve strings.
+    // This loop is the only thing that notices a transposition — the two
+    // months the other tests happen to touch cannot.
+    test('all twelve Arabic month names are in calendar order', () {
+      const names = [
+        'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', //
+        'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
+      ];
+      for (var m = 1; m <= 12; m++) {
+        final stamp = DateTime(2026, m, 15, 12, 0).millisecondsSinceEpoch;
+        expect(
+          Format.activityDate(stamp, now: DateTime(2031, 1, 1)),
+          '15 ${names[m - 1]} 2026 · 12:00',
+          reason: 'month $m',
+        );
+      }
+    });
+
     test('a future stamp is not called today', () {
       final stamp = DateTime(2026, 10, 16, 9).millisecondsSinceEpoch;
       expect(
