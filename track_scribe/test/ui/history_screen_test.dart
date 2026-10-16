@@ -2,11 +2,13 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:track_scribe/core/format.dart';
 import 'package:track_scribe/data/activity_list_item.dart';
 import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
+import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
 import 'package:track_scribe/ui/history/history_screen.dart';
@@ -93,7 +95,7 @@ void main() {
     // `findsOneWidget` unsatisfiable (verified RED: "Found 2 widgets with text
     // 16:40 ... Which: is too many"). 1020 m still prints through the same
     // "1,0" token while its pace reads 16:20.
-    await seed(
+    final older = await seed(
       startWallMillis: 1_700_000_000_000,
       distanceM: 1020,
       elapsedNanos: 1_000_000_000_000,
@@ -119,6 +121,45 @@ void main() {
     expect(find.text('33:20'), findsOneWidget);
     expect(find.textContaining('1,0'), findsOneWidget);
     expect(find.text('16:40'), findsOneWidget);
+    // I-3: the pace column's value. The walk's 1020 m / 1000 s is
+    // `Format.pace(980.39…)` = `16:20` (the newer row's pace is
+    // `Format.pace(312.5)` = `5:12`), a string no other column prints — so a
+    // flipped pace formula or a deleted pace `_stat` is caught here. The
+    // `--:--` branch is NOT reachable from any row this file seeds: every row
+    // is at or above the 50 m guard (120, 1020, 6400 m), which is why the open
+    // row below pins its real pace instead.
+    expect(find.text('16:20'), findsOneWidget);
+    // I-4: `Format.activityDate` must reach the screen, per row, from that
+    // row's OWN startWallMillis. The label's hour/minute come from the local
+    // time zone, so the expected value is derived by calling the function
+    // itself on the seed's millis rather than a literal string: this keeps the
+    // test zone-proof (a clock-dependent assertion is the one thing that must
+    // not be introduced here) while a deleted date Text findsNothing, and a
+    // cross-row swap makes each row's own date find nothing under its own key.
+    expect(
+      find.descendant(
+        of: find.byKey(Key('history-row-$newer')),
+        matching: find.text(Format.activityDate(1_800_000_000_000)),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(Key('history-row-$older')),
+        matching: find.text(Format.activityDate(1_700_000_000_000)),
+      ),
+      findsOneWidget,
+    );
+    // M-1: "newest first", asserted on the vertical axis (RTL does not change
+    // it). Ordering itself is already pinned in test/data/history_repository_
+    // test.dart; this catches a screen-side re-shuffle only.
+    expect(
+      tester.getTopLeft(find.byKey(Key('history-row-$newer'))).dy,
+      lessThan(tester.getTopLeft(find.byKey(Key('history-row-$older'))).dy),
+    );
+    // M-3: the older row's key is captured too, so a duplicate-key or
+    // dropped-row bug cannot hide behind a single `findsOneWidget`.
+    expect(find.byKey(Key('history-row-$older')), findsOneWidget);
     // ر120: climb_m is an unmeasured zero until ر11, so no row may print it.
     expect(find.textContaining('صعود'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -126,9 +167,25 @@ void main() {
 
   testWidgets('an empty install says so instead of showing a blank list', (tester) async {
     await tester.pumpWidget(app());
+    // I-1: the one place this screen may use the accent token (spec §5) is the
+    // in-flight spinner. Without `pumpAndSettle` the read is still pending, so
+    // this is the only way the loading branch is ever on screen — and the only
+    // thing that notices if the accent (or the whole spinner) disappears.
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(
+      tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator),
+      ).color,
+      Palette.accent,
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('لا أنشطة بعد'), findsOneWidget);
+    // M-2: the empty state's second line — the spec §7 «way out» half.
+    expect(
+      find.text('سجّل أول مسار من شاشة التسجيل ليظهر هنا'),
+      findsOneWidget,
+    );
     expect(find.byType(InkWell), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -163,6 +220,13 @@ void main() {
   // ر121: a killed session leaves a checkpoint behind. The row must be visible
   // AND marked, never presented as a finished activity.
   testWidgets('an activity still being recorded is marked, not hidden', (tester) async {
+    // M-4: this is the only row carrying FOUR `Expanded` columns (the state
+    // chip joins the three stats), and at the default 800×600 view that layout
+    // has never been exercised. The same phone size the populated test pins.
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+
     final live = await repo.insertActivity(
       uuid: 'uuid-live',
       sport: 'bike',
@@ -181,8 +245,23 @@ void main() {
     expect(find.byKey(Key('history-row-$live')), findsOneWidget);
     expect(find.text('قيد التسجيل'), findsOneWidget);
     expect(find.text('دراجة'), findsOneWidget);
+    // ر123: the «قيد التسجيل» row prints the checkpoint's MEASURED totals as
+    // ordinary numbers — no dash, no zero, no special case. This is the only
+    // assertion that covers the ruling on the surface it was written for.
+    // Derived, not guessed: localeSepProvider is ',' (lib/state/
+    // locale_providers.dart:6), so Format.distance(120, sep: ',') = `0,12`
+    // and Format.duration(60e9 ns) = `01:00`. An `isOpen ? '—' : …` dash of
+    // the open row fails the first of these.
+    expect(find.textContaining('0,12'), findsOneWidget);
+    expect(find.text('01:00'), findsOneWidget);
+    // I-3 (R19 guard): 120 m is AT OR ABOVE the 50 m guard, so the open row
+    // must print a real pace, not `--:--`: 60 s / 0.12 km = 500 s/km →
+    // Format.pace(500) = `8:20`. Pinned instead of a `--:--` assertion,
+    // because no row this file seeds falls below the guard.
+    expect(find.text('8:20'), findsOneWidget);
     // And it is inert: no route to replay, so no tap target (ر121).
     expect(tester.widget<InkWell>(find.byKey(Key('history-row-$live'))).onTap, isNull);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('tapping a row opens that activity on the detail screen', (tester) async {
@@ -200,6 +279,7 @@ void main() {
     final detail = tester.widget<ActivityDetailScreen>(find.byType(ActivityDetailScreen));
     expect(detail.activityId, id);
     expect(find.text('تفاصيل النشاط'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   // ر117 + ر116: the list's value is released when the screen leaves, so
