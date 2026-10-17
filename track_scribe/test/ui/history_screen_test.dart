@@ -264,6 +264,65 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // Review I-1: the user-visible half of the bug. A finished row that still has
+  // a checkpoint (the stop path wrote the totals and died before clearing it)
+  // used to be masked, labelled «قيد التسجيل» AND given `onTap: null` — the
+  // recording existed but nothing could open it, and the recorder's own detail
+  // button is already gone once the session resets.
+  testWidgets('a finished activity with a surviving checkpoint opens on tap', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+
+    final id = await repo.insertActivity(
+      uuid: 'uuid-orphan',
+      sport: 'run',
+      startWallMillis: 1_800_000_000_000,
+    );
+    await repo.saveResume(
+      activityId: id,
+      lastStored: StoredPoint(lat: 36.75, lon: 3.04, timeNanos: 0, accuracyM: 5, type: WaypointType.normal),
+      distanceM: 120,
+      elapsedNanos: 60_000_000_000,
+    );
+    await repo.finishActivity(
+      activityId: id,
+      elapsedNanos: 900_000_000_000,
+      distanceM: 3400,
+      fixCount: 40,
+      rejectedCount: 2,
+      mockDetected: false,
+    );
+
+    await tester.pumpWidget(app(through: db));
+    await tester.pumpAndSettle();
+
+    final row = find.byKey(Key('history-row-$id'));
+    expect(row, findsOneWidget);
+    // ر121 does NOT apply: this recording was stopped, not killed.
+    expect(find.text('قيد التسجيل'), findsNothing);
+    // The finished totals, not the stale checkpoint's: 3400 m → `3,40`,
+    // 900 s → `15:00`, pace 900/3.4 = 264 s/km → `4:24` (derived from
+    // lib/core/format.dart, the same derivation the populated test uses).
+    expect(find.text('3,40'), findsWidgets);
+    expect(find.text('15:00'), findsOneWidget);
+    expect(find.text('4:24'), findsOneWidget);
+    expect(find.text('0,12'), findsNothing);
+    expect(find.text('01:00'), findsNothing);
+    // …and the row is live again.
+    expect(tester.widget<InkWell>(row).onTap, isNotNull);
+
+    await tester.tap(row);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byType(ActivityDetailScreen), findsOneWidget);
+    expect(
+      tester.widget<ActivityDetailScreen>(find.byType(ActivityDetailScreen)).activityId,
+      id,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('tapping a row opens that activity on the detail screen', (tester) async {
     final id = await seed(
       startWallMillis: 1_800_000_000_000,

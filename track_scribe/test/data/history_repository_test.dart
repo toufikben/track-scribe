@@ -52,6 +52,19 @@ Future<int> _seed(
   return id;
 }
 
+/// A repository whose checkpoint removal always fails, so
+/// `finishAndClearResume`'s second statement throws inside its transaction
+/// (review I-1). `finishActivity` is NOT overridden: the point is that a
+/// successful totals write must not survive a failed clear.
+class _ClearResumeFailingRepo extends ActivityRepository {
+  _ClearResumeFailingRepo(super.db);
+
+  @override
+  Future<void> clearResume(int activityId) {
+    throw StateError('simulated checkpoint removal failure');
+  }
+}
+
 void main() {
   late AppDatabase db;
   late ActivityRepository repo;
@@ -238,5 +251,238 @@ void main() {
     expect(afterLive.isOpen, isFalse);
     expect(afterLive.distanceM, 0);
     expect(afterLive.elapsedNanos, 0);
+  });
+
+  // Review I-1: `stop()` wrote the row totals and cleared the checkpoint as two
+  // separate awaits, so a kill between them left a checkpoint naming a FINISHED
+  // row. That state had no coverage at all — and the absence was the bug: the
+  // list masked the row's real totals with the older checkpoint, labelled it
+  // «قيد التسجيل», and the screen set `onTap: null`, so the user could not open
+  // their own recording. `finishActivity` now stamps `activities.updated_at`,
+  // which makes "finished" a stored fact instead of an inference from a missing
+  // checkpoint row.
+  test('a finished activity whose checkpoint survived lists closed', () async {
+    final id = await repo.insertActivity(
+      uuid: 'uuid-orphan-checkpoint',
+      sport: 'run',
+      startWallMillis: 1_700_000_000_000,
+    );
+    // The checkpoint of the session that was still in progress: 120 m at the
+    // cadence of the last write, i.e. OLDER and SMALLER than the stop totals.
+    await repo.saveResume(
+      activityId: id,
+      lastStored: StoredPoint(
+        lat: 36.75,
+        lon: 3.04,
+        timeNanos: 0,
+        accuracyM: 5,
+        type: WaypointType.normal,
+      ),
+      distanceM: 120,
+      elapsedNanos: 60_000_000_000,
+    );
+    // …then the row WAS finished, and the process died before `clearResume`.
+    await repo.finishActivity(
+      activityId: id,
+      elapsedNanos: 900_000_000_000,
+      distanceM: 3400,
+      fixCount: 40,
+      rejectedCount: 2,
+      mockDetected: false,
+    );
+
+    final items = await repo.listActivities();
+    final row = items.firstWhere((ActivityListItem i) => i.id == id);
+    expect(
+      row.isOpen,
+      isFalse,
+      reason:
+          'a row finishActivity wrote is finished no matter what checkpoint '
+          'survives — ر121 marks a KILLED recording, not a stopped one',
+    );
+    expect(
+      row.distanceM,
+      3400,
+      reason: 'the finished row prints its OWN totals, not the stale 120 m',
+    );
+    expect(row.elapsedNanos, 900_000_000_000);
+
+    // And the marker is the stored column, not the checkpoint: prove it by
+    // clearing the checkpoint too — the row must stay closed with the same
+    // numbers, i.e. nothing about it depended on the checkpoint disappearing.
+    await repo.clearResume(id);
+    final cleared = (await repo.listActivities()).firstWhere(
+      (ActivityListItem i) => i.id == id,
+    );
+    expect(cleared.isOpen, isFalse);
+    expect(cleared.distanceM, 3400);
+    expect(cleared.elapsedNanos, 900_000_000_000);
+  });
+
+  // Review I-1 part 3: ر123 makes an OPEN row print the checkpoint's measured
+  // totals, but the checkpoint is written at a cadence, so it can LAG the row.
+  // Both numbers are monotonic accumulators of the same activity, so the greater
+  // is always a measured one and never an invention — and taking the max means a
+  // stale checkpoint can no longer shrink what the list shows.
+  test('an open row prints the greater of row-vs-checkpoint totals', () async {
+    final id = await repo.insertActivity(
+      uuid: 'uuid-lagging-checkpoint',
+      sport: 'run',
+      startWallMillis: 1_700_000_000_000,
+    );
+    // The row itself carries 500 m / 300 s. Written directly, deliberately NOT
+    // through finishActivity, which would stamp `updated_at` and close the row:
+    // this is the "row ahead of its checkpoint" state while still open.
+    final stored =
+        await (db.select(
+          db.activities,
+        )..where((t) => t.id.equals(id))).getSingle();
+    await db.update(db.activities).replace(
+      stored.copyWith(distanceM: 500, elapsedNanos: 300_000_000_000),
+    );
+    await repo.saveResume(
+      activityId: id,
+      lastStored: StoredPoint(
+        lat: 36.75,
+        lon: 3.04,
+        timeNanos: 0,
+        accuracyM: 5,
+        type: WaypointType.normal,
+      ),
+      distanceM: 120,
+      elapsedNanos: 60_000_000_000,
+    );
+
+    final row = (await repo.listActivities()).firstWhere(
+      (ActivityListItem i) => i.id == id,
+    );
+    expect(row.isOpen, isTrue, reason: 'no finishActivity ran, so ر121 applies');
+    expect(row.distanceM, 500);
+    expect(row.elapsedNanos, 300_000_000_000);
+  });
+
+  // Review I-1 part 2: the stop path's pair, as ONE transaction. Both effects
+  // must be visible together — the totals AND the checkpoint removal — because
+  // the state this replaces (one landed, one not) is the bug. The rollback half
+  // is proven separately by sabotaging `clearResume` to throw: see
+  // final-fix-report.md, «I-1: the transaction bites».
+  test('finishAndClearResume writes the totals and removes the checkpoint', () async {
+    final id = await repo.insertActivity(
+      uuid: 'uuid-atomic',
+      sport: 'run',
+      startWallMillis: 1_700_000_000_000,
+    );
+    await repo.saveResume(
+      activityId: id,
+      lastStored: StoredPoint(
+        lat: 36.75,
+        lon: 3.04,
+        timeNanos: 0,
+        accuracyM: 5,
+        type: WaypointType.normal,
+      ),
+      distanceM: 120,
+      elapsedNanos: 60_000_000_000,
+    );
+
+    await repo.finishAndClearResume(
+      activityId: id,
+      elapsedNanos: 900_000_000_000,
+      distanceM: 3400,
+      fixCount: 40,
+      rejectedCount: 2,
+      mockDetected: false,
+    );
+
+    // Effect 1 — the checkpoint is gone, so nothing can call this row open.
+    expect(
+      await repo.loadResume(),
+      isNull,
+      reason: 'clearResume landed inside the same transaction',
+    );
+    // Effect 2 — the row holds the real totals, and the closed marker with them.
+    final row =
+        await (db.select(
+          db.activities,
+        )..where((t) => t.id.equals(id))).getSingle();
+    expect(row.distanceM, 3400);
+    expect(row.elapsedNanos, 900_000_000_000);
+    expect(row.fixCount, 40);
+    expect(row.rejectedCount, 2);
+    expect(
+      row.updatedAt,
+      isNotNull,
+      reason: 'finishActivity stamps the finished marker (review I-1)',
+    );
+
+    // And the list agrees: closed, with its own totals.
+    final item = (await repo.listActivities()).firstWhere(
+      (ActivityListItem i) => i.id == id,
+    );
+    expect(item.isOpen, isFalse);
+    expect(item.distanceM, 3400);
+    expect(item.elapsedNanos, 900_000_000_000);
+  });
+
+  // Review I-1: the other half of atomicity, and the permanent proof that the
+  // transaction is load-bearing. When the checkpoint removal fails, the totals
+  // write must be UNDONE — otherwise the app lands in exactly the state this
+  // round set out to destroy: a finished-looking row still named by a
+  // checkpoint. Drop the `transaction()` and this test reports
+  // `Expected: <0>  Actual: <3400.0>` (observed; see the fix-round report).
+  test('a finishAndClearResume that cannot clear the checkpoint writes nothing', () async {
+    final repo = _ClearResumeFailingRepo(db);
+    final id = await repo.insertActivity(
+      uuid: 'uuid-rollback',
+      sport: 'run',
+      startWallMillis: 1_700_000_000_000,
+    );
+    await repo.saveResume(
+      activityId: id,
+      lastStored: StoredPoint(
+        lat: 36.75,
+        lon: 3.04,
+        timeNanos: 0,
+        accuracyM: 5,
+        type: WaypointType.normal,
+      ),
+      distanceM: 120,
+      elapsedNanos: 60_000_000_000,
+    );
+
+    await expectLater(
+      repo.finishAndClearResume(
+        activityId: id,
+        elapsedNanos: 900_000_000_000,
+        distanceM: 3400,
+        fixCount: 40,
+        rejectedCount: 2,
+        mockDetected: false,
+      ),
+      throwsStateError,
+    );
+
+    final row =
+        await (db.select(
+          db.activities,
+        )..where((t) => t.id.equals(id))).getSingle();
+    expect(
+      row.distanceM,
+      0,
+      reason: 'the totals write rolled back with the failed clear',
+    );
+    expect(row.elapsedNanos, 0);
+    expect(
+      row.updatedAt,
+      isNull,
+      reason: 'and so did the finished marker — nothing claims this row is closed',
+    );
+    // The safe outcome the controller's `try` documents: the checkpoint is
+    // still there, so the next start resumes instead of stranding the session.
+    expect(
+      await repo.loadResume(),
+      isNotNull,
+      reason: 'the activity stays recoverable after the failed stop',
+    );
   });
 }

@@ -32,10 +32,15 @@ class ActivityListItem {
   final int rejectedCount;
   final bool mockDetected;
 
-  /// True while a `resume` checkpoint still names this activity, i.e. the
-  /// recording was paused or killed rather than stopped (ر12/R79). For such a
-  /// row `distanceM`/`elapsedNanos` are the CHECKPOINT's measured totals
-  /// (ر123): the `activities` row itself still holds the schema defaults
+  /// True while a `resume` checkpoint still names this activity AND
+  /// `activities.updated_at` is still null, i.e. the recording was paused or
+  /// killed rather than stopped (ر12/R79). Review I-1 added the second half:
+  /// `ActivityRepository.finishActivity` stamps that column, so "finished" is a
+  /// stored fact and a checkpoint that survived the kill that followed the stop
+  /// can no longer relabel a real activity «قيد التسجيل» (which used also to
+  /// cost it its tap target, `history_screen.dart`). For a genuinely open row
+  /// `distanceM`/`elapsedNanos` are the CHECKPOINT's measured totals (ر123): the
+  /// `activities` row itself still holds the schema defaults
   /// 0 m / 0 ns — unmeasured numbers no view may print («لا نطبع رقمًا لم
   /// يُقس») — so the list marks the row «قيد التسجيل» instead of presenting
   /// it as finished (ر121). The checkpoint table carries no per-fix columns

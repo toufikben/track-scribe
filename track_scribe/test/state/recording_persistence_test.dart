@@ -86,6 +86,57 @@ void main() {
       isNull,
       reason: 'a clean stop clears the checkpoint',
     );
+    expect(
+      row.updatedAt,
+      isNotNull,
+      reason:
+          'review I-1: the stop path stamped `updated_at`, so the row is '
+          'finished as a stored fact, not as an inference from the missing '
+          'checkpoint above',
+    );
+    await src.dispose();
+  });
+
+  // Review I-1: the WIRE. The repository's own test proves the pair rolls back
+  // together; this one proves the recorder actually uses that pair. A controller
+  // that went back to `await finishActivity()` + `await clearResume()` reports
+  // `atomicCalls == 0` and only a kill inside that window would show the bug
+  // again — which is exactly how it survived four tasks of green tests.
+  test('stop() finalizes through the atomic pair, once (review I-1)', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final repo = _AtomicFinalizeRepo(db);
+    final src = ControlledFixSource()..stepNanos = 2000000000;
+    final container = ProviderContainer(
+      overrides: [
+        fixSourceProvider.overrideWithValue(src),
+        appDatabaseProvider.overrideWithValue(db),
+        activityRepositoryProvider.overrideWithValue(repo),
+      ],
+    );
+    addTearDown(container.dispose);
+    final controller = container.read(recordingProvider.notifier);
+
+    await controller.start();
+    src.emitMany(2, accuracyM: 3.0);
+    var lat = 36.7538;
+    for (var i = 0; i < 6; i++) {
+      lat += 0.0001;
+      src.emit(lat: lat);
+    }
+    await _settle();
+    await controller.stop();
+
+    expect(
+      repo.atomicCalls,
+      1,
+      reason: 'stop() calls finishAndClearResume exactly once',
+    );
+    expect(
+      await repo.loadResume(),
+      isNull,
+      reason: 'and the pair landed: no checkpoint names the closed row',
+    );
     await src.dispose();
   });
 
@@ -825,6 +876,36 @@ class _CountingRepo extends ActivityRepository {
     } finally {
       _inFlight--;
     }
+  }
+}
+
+/// A storage layer that counts which finalize entry point `stop()` actually
+/// calls (review I-1). Only the entry point is counted —
+/// `finishAndClearResume` dispatches to `finishActivity`/`clearResume` itself
+/// inside its transaction, so counting those would always report a call.
+class _AtomicFinalizeRepo extends ActivityRepository {
+  _AtomicFinalizeRepo(super.db);
+
+  int atomicCalls = 0;
+
+  @override
+  Future<void> finishAndClearResume({
+    required int activityId,
+    required int elapsedNanos,
+    required double distanceM,
+    required int fixCount,
+    required int rejectedCount,
+    required bool mockDetected,
+  }) {
+    atomicCalls++;
+    return super.finishAndClearResume(
+      activityId: activityId,
+      elapsedNanos: elapsedNanos,
+      distanceM: distanceM,
+      fixCount: fixCount,
+      rejectedCount: rejectedCount,
+      mockDetected: mockDetected,
+    );
   }
 }
 

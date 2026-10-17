@@ -155,6 +155,18 @@ class ActivityRepository {
   /// each already carrying what an earlier session wrote into the checkpoint.
   /// One session's time against all sessions' distance produces a row that
   /// validates fine and poisons every average pace read from it.
+  ///
+  /// Review I-1: this also stamps `activities.updated_at`. That column was
+  /// declared (`database.dart:24`) and read by nothing in the app — grep over
+  /// `lib/` and `test/` proves it — so writing it costs no migration
+  /// (`schemaVersion` is still 1 and no build has shipped). It makes
+  /// "finished" a STORED FACT: a row this function wrote was stopped, whatever
+  /// checkpoint still names it, and [listActivities] reads it that way. Before
+  /// this, openness was inferred only from the checkpoint's presence, so a
+  /// process that died between the totals write and `clearResume` left a real
+  /// activity permanently labelled «قيد التسجيل» and unopenable. The stamp is
+  /// a marker, never a duration source (ر1/R21): nothing subtracts it, and no
+  /// view prints it.
   Future<void> finishActivity({
     required int activityId,
     required int elapsedNanos,
@@ -174,8 +186,49 @@ class ActivityRepository {
         fixCount: fixCount,
         rejectedCount: rejectedCount,
         mockDetected: mockDetected,
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );
+  }
+
+  /// The stop path's write, as ONE transaction (review I-1).
+  ///
+  /// `recording_controller.stop()` used to await [finishActivity] and
+  /// [clearResume] as two statements: a ColorOS kill — or any throw — in that
+  /// window left a checkpoint outliving the finished row, which is the state
+  /// [listActivities] can now survive but should never have to create. Ruling
+  /// ر13 is the precedent this file already uses (`appendPoints` = one
+  /// `batch()` = one immediate transaction whose future completes only after
+  /// the commit): here the pair either lands together or not at all.
+  ///
+  /// Failure keeps the SAFE outcome — [finishActivity] throwing means the
+  /// totals never landed, so no reader can present a half-written row as
+  /// finished, and the checkpoint still names the activity so the next start
+  /// resumes from it (R82). That is why the caller's `try` stays.
+  ///
+  /// Dispatch note: this calls [finishActivity] through the instance, so a
+  /// subclass that overrides it (as `test/state/recording_persistence_test.dart`
+  /// does to simulate a failing finalize) still throws inside the transaction
+  /// and rolls it back.
+  Future<void> finishAndClearResume({
+    required int activityId,
+    required int elapsedNanos,
+    required double distanceM,
+    required int fixCount,
+    required int rejectedCount,
+    required bool mockDetected,
+  }) {
+    return _db.transaction(() async {
+      await finishActivity(
+        activityId: activityId,
+        elapsedNanos: elapsedNanos,
+        distanceM: distanceM,
+        fixCount: fixCount,
+        rejectedCount: rejectedCount,
+        mockDetected: mockDetected,
+      );
+      await clearResume(activityId);
+    });
   }
 
   Future<void> clearResume(int activityId) {
@@ -263,7 +316,17 @@ class ActivityRepository {
   /// holds the schema defaults 0 m / 0 ns in its `activities` row, so for
   /// `isOpen` rows the stored row values are NOT the source of truth and the
   /// checkpoint's measured `distanceM`/`lastElapsedNanos` are returned
-  /// instead. The checkpoint table carries no per-fix columns
+  /// instead — as the MAXIMUM of the pair, since review I-1: both are monotonic
+  /// accumulators of the same activity, so the greater one is measured either
+  /// way and a checkpoint that lags its row can never shrink what the list
+  /// prints.
+  ///
+  /// Openness (review I-1) is a checkpoint naming the row AND `updated_at`
+  /// being null: [finishActivity] stamps that column, so a row that was stopped
+  /// stays finished even if the checkpoint survived the kill that followed the
+  /// write. Such a row prints its OWN totals — the finished ones — and the
+  /// screen keeps it navigable.
+  /// The checkpoint table carries no per-fix columns
   /// (database.dart:44-68), so `fixCount`/`rejectedCount`/`mockDetected` stay
   /// the unfinalized row's defaults — which is why no view may render them
   /// for an open row. `track_points` is never opened here — that is the whole
@@ -284,26 +347,42 @@ class ActivityRepository {
           .get())
         s.activityId: s,
     };
-    return [
-      for (final r in rows)
+    final items = <ActivityListItem>[];
+    for (final r in rows) {
+      // ر121 + review I-1: open = a checkpoint names it AND nothing ever
+      // finished it. `updated_at` is the stored fact; the checkpoint alone is
+      // only evidence that a session stopped writing.
+      final cp = checkpoints[r.id];
+      final isOpen = cp != null && r.updatedAt == null;
+      items.add(
         ActivityListItem(
           id: r.id,
           sport: r.sport,
           startWallMillis: r.startWallMillis,
-          // ر123: an activity named by a resume checkpoint has never been
-          // finished, so its `activities` row still holds the schema defaults
-          // 0 m / 0 ns — numbers nobody measured. The checkpoint the open-set
-          // lookup already loaded carries the MEASURED totals (distanceM is
-          // cumulative, lastElapsedNanos is R81's cross-session sum), so the
-          // «قيد التسجيل» row prints those instead of an unmeasured zero.
-          distanceM: checkpoints[r.id]?.distanceM ?? r.distanceM,
-          elapsedNanos: checkpoints[r.id]?.lastElapsedNanos ?? r.elapsedNanos,
+          // ر123: an OPEN row's `activities` values are still the schema
+          // defaults 0 m / 0 ns — numbers nobody measured — so the checkpoint
+          // loaded above supplies them (distanceM is cumulative,
+          // lastElapsedNanos is R81's cross-session sum). Taking the greater
+          // of the pair keeps that honest in both directions: a row ahead of
+          // its checkpoint prints the row, a checkpoint ahead of its row
+          // prints the checkpoint, and neither ever prints a smaller number
+          // than the other measured.
+          distanceM: !isOpen
+              ? r.distanceM
+              : (cp.distanceM > r.distanceM ? cp.distanceM : r.distanceM),
+          elapsedNanos: !isOpen
+              ? r.elapsedNanos
+              : (cp.lastElapsedNanos > r.elapsedNanos
+                    ? cp.lastElapsedNanos
+                    : r.elapsedNanos),
           fixCount: r.fixCount,
           rejectedCount: r.rejectedCount,
           mockDetected: r.mockDetected,
-          isOpen: checkpoints.containsKey(r.id),
+          isOpen: isOpen,
         ),
-    ];
+      );
+    }
+    return items;
   }
 
   /// R86: read one persisted on/off flag; an unwritten key returns [defaultValue].

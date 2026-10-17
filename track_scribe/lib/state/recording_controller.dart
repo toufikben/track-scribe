@@ -445,7 +445,11 @@ class RecordingController extends Notifier<RecordingState> {
     if (engine != null && activityId != null && repo != null) {
       try {
         final stats = engine.stats;
-        await repo.finishActivity(
+        // Review I-1: ONE transaction, so the totals and the checkpoint removal
+        // land together. Two awaits here left a window in which a kill produced
+        // a finished row still named by a checkpoint — which the history list
+        // then masked, labelled «قيد التسجيل», and refused to open.
+        await repo.finishAndClearResume(
           activityId: activityId,
           // R81: the carried total plus this session's own duration — the same
           // set of sessions `engine.distanceMeters` already accumulated.
@@ -455,10 +459,10 @@ class RecordingController extends Notifier<RecordingState> {
           rejectedCount: stats.rejectedCount,
           mockDetected: stats.mockFixCount > 0,
         );
-        await repo.clearResume(activityId);
       } on Object {
-        // The session is over and the state resets below; the resume row
-        // survives, so the data stays recoverable on the next start.
+        // The session is over and the state resets below; the transaction rolled
+        // back, so nothing was written and the resume row survives — the data
+        // stays recoverable on the next start.
       }
     }
     state = RecordingState(
