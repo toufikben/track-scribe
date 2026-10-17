@@ -181,7 +181,7 @@ void main() {
   // The first caught a real defect: the three-stat Row overflowed by 97 dp on
   // the right, which `StatPanel._stat` now fixes with a bounded, scaled-down
   // cell.
-  Future<void> _pumpAtTextScale(WidgetTester tester, double scale) async {
+  Future<void> pumpAtTextScale(WidgetTester tester, double scale) async {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.75;
     tester.platformDispatcher.textScaleFactorTestValue = scale;
@@ -197,7 +197,7 @@ void main() {
   testWidgets('the 40 % stat panel survives a 1.5x text scale (ر124 + §5)', (
     tester,
   ) async {
-    await _pumpAtTextScale(tester, 1.5);
+    await pumpAtTextScale(tester, 1.5);
 
     expect(tester.takeException(), isNull);
     // The panel is still the panel: its numbers and its wide control are on
@@ -209,7 +209,7 @@ void main() {
   testWidgets('the 40 % stat panel survives the 2.0x «Largest» text scale', (
     tester,
   ) async {
-    await _pumpAtTextScale(tester, 2.0);
+    await pumpAtTextScale(tester, 2.0);
 
     expect(tester.takeException(), isNull);
     expect(find.text('المسافة · كم'), findsOneWidget);
