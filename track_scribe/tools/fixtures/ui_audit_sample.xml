@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='UTF-8' standalone=yes ?>
+<hierarchy rotation="0">
+  <node index="0" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="" clickable="false" bounds="[0,0][720,1604]">
+    <node index="1" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="خريطة" clickable="false" bounds="[0,0][720,804]" />
+    <node index="2" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="المشي" clickable="true" bounds="[472,24][696,120]" />
+    <node index="3" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="الجري" clickable="true" bounds="[248,24][472,120]" />
+    <node index="4" text="تسجيل نشِط" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="" clickable="false" bounds="[12,696][240,792]" />
+    <node index="5" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="لوحة الأرقام" clickable="false" bounds="[0,804][720,1340]" />
+    <node index="6" text="1,00" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="" clickable="false" bounds="[480,860][672,980]" />
+    <node index="7" text="6:40" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="" clickable="false" bounds="[64,860][256,980]" />
+    <node index="8" text="إيق" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="" clickable="false" bounds="[64,1010][256,1060]" />
+    <node index="9" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="إيقاف" clickable="true" bounds="[24,1180][696,1300]" />
+    <node index="10" text="" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="زوايا" clickable="true" bounds="[300,1100][364,1164]" />
+    <node index="11" text="تفاصيل الن…" resource-id="" class="android.view.View" package="dev.toufik.track_scribe" content-desc="" clickable="false" bounds="[400,1540][696,1600]" />
+  </node>
+</hierarchy>
