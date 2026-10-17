@@ -8,6 +8,13 @@ import 'package:track_scribe/source/fix_source.dart';
 /// pipeline (engine gates, idle logic, distance accumulation) runs in tests
 /// and on the emulator with no GPS hardware.
 ///
+/// Every fix it emits carries `isMocked: true` (ر10). That is not decoration:
+/// the engine counts mocked fixes and `recording_controller.dart` writes the
+/// count into `activities.mock_detected`, so a session this source produced
+/// is stamped as simulated wherever the row is read — on a debug phone driven
+/// by `synthetic.mode` (borrow 1أ) just as in a unit test. A number nobody
+/// measured is never allowed to look like a GPS measurement.
+///
 /// Note (ruling R21): [Stopwatch] is real time and is NOT faked by the test
 /// framework's `pump` — only [Timer.periodic] is. Widget tests must therefore
 /// never assert elapsed-time-derived values after fake pumps; the distance
@@ -56,6 +63,7 @@ class SyntheticFixSource implements FixSource {
           timeNanos: _sw.elapsedMicroseconds * 1000,
           accuracyM: accuracyM,
           speedMps: speedMps,
+          isMocked: true,
         ),
       );
     });
