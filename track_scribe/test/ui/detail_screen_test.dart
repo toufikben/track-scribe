@@ -348,10 +348,6 @@ void main() {
 
     setUp(() => exporter = _RecordingExporter());
 
-    tearDown(() => TestDefaultBinaryMessengerBinding.instance
-        .defaultBinaryMessenger
-        .setMockMethodCallHandler(kShareChannel, null));
-
     /// Production wiring with one thing swapped: the exporter records instead
     /// of writing and sharing.
     Widget exportApp({int activityId = -1}) => ProviderScope(
