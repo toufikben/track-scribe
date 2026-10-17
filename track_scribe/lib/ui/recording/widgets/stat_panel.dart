@@ -45,7 +45,6 @@ class StatPanel extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
             _stat('المسافة · كم', Format.distance(distanceM, sep: sep), theme),
             _stat('الوقت', Format.duration(elapsedNanos), theme),
@@ -62,11 +61,21 @@ class StatPanel extends ConsumerWidget {
     );
   }
 
-  Widget _stat(String label, String value, TextTheme theme) => Column(
-    children: [
-      Text(label, style: theme.labelMedium),
-      const SizedBox(height: 4),
-      Text(value, style: theme.bodyLarge),
-    ],
+  /// One third of the row, scaled down rather than clipped when the user turns
+  /// the system font up (spec §5 dynamic type). At 1.5× the three Arabic labels'
+  /// intrinsic widths overflowed a ~361 dp panel by 97 dp; each cell now gets a
+  /// bounded box and the text shrinks inside it — never an ellipsis, never a
+  /// scroll view, and the ر124 60/40 band split stays untouched.
+  Widget _stat(String label, String value, TextTheme theme) => Expanded(
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Column(
+        children: [
+          Text(label, style: theme.labelMedium),
+          const SizedBox(height: 4),
+          Text(value, style: theme.bodyLarge),
+        ],
+      ),
+    ),
   );
 }

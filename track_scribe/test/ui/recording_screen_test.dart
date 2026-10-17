@@ -171,6 +171,51 @@ void main() {
     expect(find.text('ابدأ التسجيل'), findsOneWidget);
   });
 
+  // Review I-3, spec §5 «احترام حجم الخط الديناميكي»: ر124 cut the stat panel
+  // from 60 % of the body to 40 %, and nothing in `lib/` or `test/` had ever
+  // referenced a text scaler. This is that panel's only dynamic-type guard: the
+  // big number, the three-stat row and the 56 dp control must still fit the
+  // flex-4 band when the user turns the system font up.
+  //
+  // 1.5 is Android's «Large», 2.0 is «Largest» — the top of the real slider.
+  // The first caught a real defect: the three-stat Row overflowed by 97 dp on
+  // the right, which `StatPanel._stat` now fixes with a bounded, scaled-down
+  // cell.
+  Future<void> _pumpAtTextScale(WidgetTester tester, double scale) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    tester.platformDispatcher.textScaleFactorTestValue = scale;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final db = await _seededDb();
+    addTearDown(db.close);
+
+    await tester.pumpWidget(_appWithDb(db));
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  testWidgets('the 40 % stat panel survives a 1.5x text scale (ر124 + §5)', (
+    tester,
+  ) async {
+    await _pumpAtTextScale(tester, 1.5);
+
+    expect(tester.takeException(), isNull);
+    // The panel is still the panel: its numbers and its wide control are on
+    // screen, not pushed out by the enlarged text.
+    expect(find.text('المسافة · كم'), findsOneWidget);
+    expect(find.text('ابدأ التسجيل'), findsOneWidget);
+  });
+
+  testWidgets('the 40 % stat panel survives the 2.0x «Largest» text scale', (
+    tester,
+  ) async {
+    await _pumpAtTextScale(tester, 2.0);
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('المسافة · كم'), findsOneWidget);
+    expect(find.text('ابدأ التسجيل'), findsOneWidget);
+  });
+
   testWidgets(
     'start is enabled, and Task 9a keeps it enabled through `starting` as a cancel',
     (tester) async {
