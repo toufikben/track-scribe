@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +11,8 @@ import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
+import 'package:track_scribe/export/export_format.dart';
+import 'package:track_scribe/export/track_exporter.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
@@ -331,4 +336,151 @@ void main() {
     expect(counting.reads, 2, reason: 'the point list must not outlive the screen');
     again.close();
   });
+
+  // §2أ: the export is a button on the screen that already shows the activity.
+  // What is proven HERE is the screen: the affordance appears only with a
+  // loaded activity, which format the user's tap resolves to, which row the
+  // exporter is handed, and what the user sees when the export fails. The
+  // bytes-on-disk and the arguments handed to Kotlin are proven in
+  // test/export/track_exporter_test.dart, on a real filesystem.
+  group('تصدير (§2أ)', () {
+    late _RecordingExporter exporter;
+
+    setUp(() => exporter = _RecordingExporter());
+
+    tearDown(() => TestDefaultBinaryMessengerBinding.instance
+        .defaultBinaryMessenger
+        .setMockMethodCallHandler(kShareChannel, null));
+
+    /// Production wiring with one thing swapped: the exporter records instead
+    /// of writing and sharing.
+    Widget exportApp({int activityId = -1}) => ProviderScope(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        mapStyleProvider.overrideWith((ref) => Future.value(style)),
+        trackExporterProvider.overrideWithValue(exporter),
+      ],
+      child: MaterialApp(
+        home: ActivityDetailScreen(
+          activityId: activityId == -1 ? seededId : activityId,
+        ),
+      ),
+    );
+
+    /// Opens the menu and picks [label].
+    ///
+    /// `onSelected` fires only once the menu route's CLOSE animation has
+    /// finished (`showMenu(...).then(...)`), so the settle is what hands the
+    /// tap to the exporter — no `runAsync`, because this exporter awaits only
+    /// microtasks. Real `dart:io` under this clock is the one thing that must
+    /// NOT be attempted here: measured on 2026-10-17, a `writeAsString` started
+    /// from a `testWidgets` body never completed, not even when its creation
+    /// and await were both wrapped in `tester.runAsync` — the directory was
+    /// created, the file was not, and the probe run hung.
+    Future<void> choose(WidgetTester tester, String label) async {
+      await tester.tap(find.byIcon(Icons.ios_share));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the export action appears once the activity is on screen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(exportApp());
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.ios_share), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.ios_share));
+      await tester.pumpAndSettle();
+      expect(find.text('ملف GPX'), findsOneWidget);
+      expect(find.text('ملف TCX (Garmin)'), findsOneWidget);
+    });
+
+    testWidgets('there is nothing to export while the read has failed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(exportApp(activityId: 999));
+      await tester.pumpAndSettle();
+
+      expect(find.text('تعذّر تحميل النشاط'), findsOneWidget);
+      expect(find.byIcon(Icons.ios_share), findsNothing);
+      expect(exporter.calls, isEmpty);
+    });
+
+    testWidgets('choosing GPX hands the loaded row to the exporter as GPX', (
+      tester,
+    ) async {
+      await tester.pumpWidget(exportApp());
+      await tester.pumpAndSettle();
+
+      await choose(tester, 'ملف GPX');
+
+      final call = exporter.calls.single;
+      expect(call.format, ExportFormat.gpx);
+      // The row on screen, not another id and not a summary rebuilt from the
+      // widgets: the export must carry the same distance the panel displayed.
+      expect(call.summary.id, seededId);
+      expect(call.summary.distanceM, 6400);
+      expect(call.summary.sport, 'run');
+    });
+
+    testWidgets('choosing TCX is a different request, not the GPX one relabelled', (
+      tester,
+    ) async {
+      await tester.pumpWidget(exportApp());
+      await tester.pumpAndSettle();
+
+      await choose(tester, 'ملف TCX (Garmin)');
+
+      expect(exporter.calls.single.format, ExportFormat.tcx);
+    });
+
+    testWidgets('when the export fails, the screen says so instead of going quiet', (
+      tester,
+    ) async {
+      exporter.failure = PlatformException(
+        code: 'no_app',
+        message: 'nothing accepts a GPX file',
+      );
+      await tester.pumpWidget(exportApp());
+      await tester.pumpAndSettle();
+
+      await choose(tester, 'ملف GPX');
+
+      expect(exporter.calls, hasLength(1));
+      expect(find.text('تعذّرت المشاركة'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      // The bar dismisses on a four-second timer; flush it so the binding does
+      // not end the test with a pending timer.
+      await tester.pumpAndSettle(const Duration(seconds: 5));
+    });
+  });
+}
+
+/// The screen's exporter, with the disk and the platform removed.
+///
+/// A `testWidgets` body runs on a fake clock, and real `dart:io` under it is
+/// not drivable: measured on 2026-10-17, a `File.writeAsString` started from
+/// this kind of body never completed even with its creation and await wrapped
+/// in `tester.runAsync` — the `exports` directory was created, the file inside
+/// it was not, and the suite hung. So the widget layer records the request and
+/// the byte-level write stays proven in test/export/track_exporter_test.dart,
+/// which runs on the real event loop.
+class _RecordingExporter extends TrackExporter {
+  PlatformException? failure;
+
+  final List<({ActivitySummary summary, ExportFormat format})> calls = [];
+
+  @override
+  Future<File> exportAndShare(
+    ActivitySummary summary,
+    ExportFormat format,
+  ) async {
+    calls.add((summary: summary, format: format));
+    final error = failure;
+    if (error != null) throw error;
+    return File(exportFileName(summary, format));
+  }
 }

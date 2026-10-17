@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 // `Theme` hidden: flutter_map_vector_tiles exports its own style `Theme`, which
@@ -9,6 +11,8 @@ import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/engine/sport_config.dart';
+import 'package:track_scribe/export/export_format.dart';
+import 'package:track_scribe/export/track_exporter.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
@@ -60,12 +64,17 @@ class ActivityDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(activityDetailProvider(activityId));
+    // The export action is bound to a real activity, so it appears with the
+    // activity: no button to press while the read is still running, and none
+    // offering a file that does not exist on a screen that failed to load.
+    final loaded = summary.value;
     return Scaffold(
       backgroundColor: Palette.bg,
       appBar: AppBar(
         backgroundColor: Palette.bg,
         elevation: 0,
         title: Text('تفاصيل النشاط', style: Theme.of(context).textTheme.titleLarge),
+        actions: [if (loaded != null) _ExportMenu(summary: loaded)],
       ),
       body: Directionality(
         textDirection: TextDirection.rtl,
@@ -83,6 +92,60 @@ class ActivityDetailScreen extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// §2أ: write this activity out and hand the file to Android's share sheet.
+///
+/// GPX is offered first because it is the lossless one — its `<type>` keeps
+/// `walk`, while the TCX 2.0 schema admits only `Running | Biking | Other` and
+/// must flatten a walk to `Other`. The menu states the file, not the format's
+/// marketing name, because that is what the receiving app will show.
+///
+/// The failure branch is not decoration: the disk can refuse the write, and a
+/// phone with no app that accepts a `.gpx` answers through the channel. A
+/// button that goes silent is how a user ends up tapping it three times.
+class _ExportMenu extends ConsumerWidget {
+  const _ExportMenu({required this.summary});
+
+  final ActivitySummary summary;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => PopupMenuButton<ExportFormat>(
+    tooltip: 'تصدير',
+    icon: const Icon(Icons.ios_share),
+    itemBuilder: (context) => const [
+      PopupMenuItem(value: ExportFormat.gpx, child: Text('ملف GPX')),
+      PopupMenuItem(value: ExportFormat.tcx, child: Text('ملف TCX (Garmin)')),
+    ],
+    onSelected: (format) => _export(context, ref, format),
+  );
+
+  Future<void> _export(
+    BuildContext context,
+    WidgetRef ref,
+    ExportFormat format,
+  ) async {
+    try {
+      await ref.read(trackExporterProvider).exportAndShare(summary, format);
+    } on Object catch (error) {
+      developer.log(
+        'export failed: $error',
+        name: 'track_scribe.export',
+        error: error,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Palette.surface,
+          duration: const Duration(seconds: 4),
+          content: const Text(
+            'تعذّرت المشاركة',
+            style: TextStyle(color: Palette.text, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
   }
 }
 
