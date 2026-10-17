@@ -39,6 +39,11 @@ dev_dependencies:
   drift_dev: ^2.35.1
   build_runner: ^2.4.15
   gpx: ^2.5.0
+  # Two independent readers of the §2أ writers, both dev-only: `xml` parses our
+  # bytes as XML (string matching alone cannot prove a document is
+  # well-formed), and `gpx` is an upstream GPX 1.1 consumer, so an export the
+  # wider ecosystem cannot read fails the suite instead of the user.
+  xml: ^7.0.1
 flutter:
   uses-material-design: true
   assets:
