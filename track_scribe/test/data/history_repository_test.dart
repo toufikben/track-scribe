@@ -128,12 +128,10 @@ void main() {
       1_500_000_000_000,
       4_000_000_000_000,
     ]);
-    // I-2: the three per-fix fields are asserted as lists, with values chosen
-    // so a fixCount/rejectedCount swap (→ [0, 2, 1] vs [25, 7, 10]) or a
-    // hard-coded `mockDetected: false` cannot pass.
-    expect(items.map((i) => i.fixCount), [25, 7, 10]);
-    expect(items.map((i) => i.rejectedCount), [0, 2, 1]);
-    expect(items.map((i) => i.mockDetected), [true, false, false]);
+    // Review I-2: no per-fix expectation belongs here. `ActivityListItem` has
+    // no `fixCount`/`rejectedCount`/`mockDetected` at all, so the list cannot
+    // print an unfinalized row's zeros; the columns are covered where they are
+    // final (`test/state/recording_persistence_test.dart`, the detail screen).
     // Every field the row renders must be present; nothing else is invented.
     expect(items.map((i) => i.isOpen), [false, false, false]);
   });
@@ -234,12 +232,9 @@ void main() {
     // unfinalized row's 0 م · 0:00.
     expect(open.distanceM, 120);
     expect(open.elapsedNanos, 60_000_000_000);
-    // The checkpoint table has no per-fix columns (database.dart:44-68), so
-    // these stay the unfinalized row's defaults — exactly why the history
-    // screen must not render them for an open row.
-    expect(open.fixCount, 0);
-    expect(open.rejectedCount, 0);
-    expect(open.mockDetected, isFalse);
+    // Review I-2: no per-fix assertion belongs here. `ActivityListItem` carries
+    // no `fixCount`/`rejectedCount`/`mockDetected`, so an open row cannot even
+    // hold the unfinalized zeros the `track_state` table has no column for.
 
     // And closing it removes the marker — the same checkpoint row the recorder
     // clears at stop. With no checkpoint naming it the row falls back to its

@@ -326,11 +326,14 @@ class ActivityRepository {
   /// stays finished even if the checkpoint survived the kill that followed the
   /// write. Such a row prints its OWN totals — the finished ones — and the
   /// screen keeps it navigable.
-  /// The checkpoint table carries no per-fix columns
-  /// (database.dart:44-68), so `fixCount`/`rejectedCount`/`mockDetected` stay
-  /// the unfinalized row's defaults — which is why no view may render them
-  /// for an open row. `track_points` is never opened here — that is the whole
-  /// point of the return type.
+  ///
+  /// Review I-2: the list type carries no per-fix columns, so this read cannot
+  /// hand a view an unfinalized `fixCount`/`rejectedCount`/`mockDetected` to
+  /// print — ر123 needs only the two accumulators, and the `track_state` table
+  /// has no per-fix column to source them from anyway (database.dart:44-68).
+  /// They stay where they are honest: final and rendered on the detail screen,
+  /// through `ActivitySummary`. `track_points` is never opened here — that is
+  /// the whole point of the return type.
   Future<List<ActivityListItem>> listActivities() async {
     final rows =
         await (_db.select(_db.activities)
@@ -375,9 +378,6 @@ class ActivityRepository {
               : (cp.lastElapsedNanos > r.elapsedNanos
                     ? cp.lastElapsedNanos
                     : r.elapsedNanos),
-          fixCount: r.fixCount,
-          rejectedCount: r.rejectedCount,
-          mockDetected: r.mockDetected,
           isOpen: isOpen,
         ),
       );

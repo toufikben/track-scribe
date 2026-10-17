@@ -14,9 +14,6 @@ class ActivityListItem {
     required this.startWallMillis,
     required this.distanceM,
     required this.elapsedNanos,
-    required this.fixCount,
-    required this.rejectedCount,
-    required this.mockDetected,
     required this.isOpen,
   });
 
@@ -28,9 +25,6 @@ class ActivityListItem {
   final int startWallMillis;
   final double distanceM;
   final int elapsedNanos;
-  final int fixCount;
-  final int rejectedCount;
-  final bool mockDetected;
 
   /// True while a `resume` checkpoint still names this activity AND
   /// `activities.updated_at` is still null, i.e. the recording was paused or
@@ -43,9 +37,14 @@ class ActivityListItem {
   /// `activities` row itself still holds the schema defaults
   /// 0 m / 0 ns — unmeasured numbers no view may print («لا نطبع رقمًا لم
   /// يُقس») — so the list marks the row «قيد التسجيل» instead of presenting
-  /// it as finished (ر121). The checkpoint table carries no per-fix columns
-  /// (database.dart:44-68), so `fixCount`/`rejectedCount`/`mockDetected` stay
-  /// the unfinalized row's defaults — that is exactly why a list screen must
-  /// not render them for an open row.
+  /// it as finished (ر121).
+  ///
+  /// Review I-2: this type deliberately has NO per-fix columns. `fixCount`,
+  /// `rejectedCount` and `mockDetected` used to be carried here, nothing in
+  /// `lib/` ever rendered them, and for an open row they were the unfinalized
+  /// row's zeros — the exact family ر99–ر102 legislate against, guarded until
+  /// then by two doc comments. Deleting the fields makes that unprintable by
+  /// construction; the columns are final and rendered on the detail screen,
+  /// which reads them through `ActivitySummary`.
   final bool isOpen;
 }
