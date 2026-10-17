@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The only directory this app can ever share out of (§2أ).
+     `path_provider_android` 2.3.1 maps `getApplicationSupportPath()` to
+     `context.filesDir`, and `TrackExporter` writes under its `exports`
+     child — so the pair of files a user hands to another app is exactly
+     this subtree, nothing else in the app's private storage.
+
+     `files-path`, not `external-path`: the recordings stay in internal
+     storage where no other app has blanket read access, and the grant is
+     per-URI and temporary. -->
+<paths>
+    <files-path
+        name="exports"
+        path="exports" />
+</paths>

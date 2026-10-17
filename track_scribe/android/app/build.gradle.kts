@@ -80,6 +80,17 @@ android {
     }
 }
 
+dependencies {
+    // `androidx.core.content.FileProvider`, the one class the share sheet needs
+    // (§2أ). Pinned to the lowest version whose compileSdk requirement this
+    // project already satisfies — `flutter.compileSdkVersion` is 36, and a
+    // newer core only raises that floor without adding anything we use.
+    // A transitive copy from the plugins is not enough: `implementation`
+    // deps are not on this module's compile classpath, so the import in
+    // MainActivity.kt would not resolve.
+    implementation("androidx.core:core:1.13.1")
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
