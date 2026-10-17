@@ -4,6 +4,7 @@
 المواصفة (المرجع الملزم): `docs/superpowers/specs/2026-10-09-route-recorder-dark-ui-design.md`
 
 الحالة مقاسة، لا مُعلنة: **نافذة** = فحص محلي حقيقي (flutter test/analyze) · **جهاز** = يحتاج APK + هاتف.
+خطة ما يُؤخذ من التطبيق الشقيق `trailmark` (فحص 2026-10-17): `docs/BORROW-FROM-TRAILMARK.md`.
 
 | مهمة | ماذا تفعل | نافذة | جهاز |
 |---|---|---|---|
