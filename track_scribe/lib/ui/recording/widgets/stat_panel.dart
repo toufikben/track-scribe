@@ -11,12 +11,21 @@ class StatPanel extends ConsumerWidget {
     super.key,
     required this.distanceM,
     required this.elapsedNanos,
+    required this.elapsedUnstated,
     required this.sport,
     required this.fixCount,
   });
 
   final double distanceM;
   final int elapsedNanos;
+
+  /// R125 + ر99: the caller says whether [elapsedNanos] is a measured duration
+  /// or a stored ABSENCE (an imported file that stated no clock). The panel
+  /// cannot tell the two apart itself — both are 0 — so the flag is part of its
+  /// contract rather than a default: every caller states which it means. The
+  /// live recorder always passes false (its clock is a monotonic stopwatch);
+  /// the detail screen passes the row's own answer.
+  final bool elapsedUnstated;
 
   /// Part of the panel's public contract; the panel itself renders only
   /// distance-derived values, the sport/fixCount live in the chips and banner.
@@ -28,7 +37,10 @@ class StatPanel extends ConsumerWidget {
     final sep = ref.watch(localeSepProvider);
     final theme = Theme.of(context).textTheme;
     // R19: seconds per km = elapsed s / km covered; hidden until the runner
-    // has actually moved (distance < 50 m → --:--).
+    // has actually moved (distance < 50 m → --:--). R125 needs no second gate
+    // here either: an unstated elapsed IS 0 ns and `Format.pace` already answers
+    // `<= 0` with `--:--`, so the panel's tests pin the visible outcome instead
+    // of an expression that cannot change it.
     final paceSecPerKm = distanceM < 50
         ? null
         : (elapsedNanos / 1e9) / (distanceM / 1000);
@@ -47,7 +59,13 @@ class StatPanel extends ConsumerWidget {
         Row(
           children: [
             _stat('المسافة · كم', Format.distance(distanceM, sep: sep), theme),
-            _stat('الوقت', Format.duration(elapsedNanos), theme),
+            // The same rule as the history row: «00:00» claims a measured
+            // zero-length activity, so an unstated clock is written in words.
+            _stat(
+              'الوقت',
+              elapsedUnstated ? 'غير معروف' : Format.duration(elapsedNanos),
+              theme,
+            ),
             _stat(
               'الإيقاع',
               paceSecPerKm == null

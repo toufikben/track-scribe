@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:track_scribe/data/activity_source.dart';
 import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/export/tcx_document.dart';
@@ -16,6 +17,7 @@ ActivitySummary activity(
   startWallMillis: startWallMillis,
   distanceM: distanceM,
   elapsedNanos: elapsedNanos,
+  source: kSourceRecorded,
   fixCount: points.length,
   rejectedCount: 0,
   mockDetected: false,

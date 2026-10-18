@@ -1,3 +1,5 @@
+import 'activity_source.dart';
+
 /// One row of the history list (خطة 3 §1) — the activity's stored TOTALS and
 /// nothing else.
 ///
@@ -14,6 +16,7 @@ class ActivityListItem {
     required this.startWallMillis,
     required this.distanceM,
     required this.elapsedNanos,
+    required this.source,
     required this.isOpen,
   });
 
@@ -25,6 +28,23 @@ class ActivityListItem {
   final int startWallMillis;
   final double distanceM;
   final int elapsedNanos;
+
+  /// R125 — `activities.source`, read verbatim (`kSourceRecorded` /
+  /// `kSourceGpx`). The list needs it for two things the numbers cannot say on
+  /// their own: a file from another app must be labelled as such, and its
+  /// elapsed may be an ABSENCE rather than a duration ([elapsedUnstated]).
+  final String source;
+
+  /// R125: this row came from a file, not from this app's recorder. The view
+  /// asks for this instead of comparing [source] itself, so the column's
+  /// spelling stays a data-layer fact.
+  bool get isImported => source == kSourceGpx;
+
+  /// The stored elapsed says nothing was measured, so the row shows «غير
+  /// معروف» and no pace instead of «00:00» — see [isUnstatedElapsed] for the
+  /// one rule and why it keys on [source] and not on the number.
+  bool get elapsedUnstated =>
+      isUnstatedElapsed(source: source, elapsedNanos: elapsedNanos);
 
   /// True while a `resume` checkpoint still names this activity AND
   /// `activities.updated_at` is still null, i.e. the recording was paused or

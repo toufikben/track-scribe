@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 
 import 'package:track_scribe/data/activity_list_item.dart';
+import 'package:track_scribe/data/activity_source.dart';
 import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
@@ -49,6 +50,52 @@ class ActivityRepository {
             uuid: uuid,
             sport: sport,
             startWallMillis: startWallMillis,
+          ),
+        );
+  }
+
+  /// §2أ: the row an imported file creates.
+  ///
+  /// Three differences from [insertActivity], and each is the whole reason this
+  /// method exists instead of reusing the recorder's:
+  ///
+  ///  * `source` is `'gpx'`. A file from another app states positions this
+  ///    phone never saw; the history list must be able to say so (ر125).
+  ///  * The totals arrive WITH the row. The recorder writes zeros at insert and
+  ///    fills them at stop because it measures while it goes; an import knows
+  ///    the distance and the elapsed before the first write, so there is no
+  ///    checkpoint to carry them and nothing to finish later.
+  ///  * `updatedAt` stays NULL — and that is deliberate, not an oversight.
+  ///    [listActivities] calls a row open when a resume checkpoint names it AND
+  ///    `updatedAt` is null. An import never writes a checkpoint, so no
+  ///    checkpoint can ever name this row: it is finished by construction.
+  ///    Stamping `updatedAt` here would claim a stop that never happened, and
+  ///    [finishActivity] is not callable for it (its row would need totals from
+  ///    a recording this app did not make).
+  ///
+  /// `rejectedCount` and `mockDetected` keep their defaults on purpose: they
+  /// answer what THIS app's engine refused or detected live, and a foreign file
+  /// says nothing about either. The reader's rejected-point count is returned to
+  /// the caller instead of being stored.
+  Future<int> insertImportedActivity({
+    required String uuid,
+    required String sport,
+    required int startWallMillis,
+    required double distanceM,
+    required int elapsedNanos,
+    required int fixCount,
+  }) {
+    return _db
+        .into(_db.activities)
+        .insert(
+          ActivitiesCompanion.insert(
+            uuid: uuid,
+            sport: sport,
+            startWallMillis: startWallMillis,
+            source: const Value(kSourceGpx),
+            distanceM: Value(distanceM),
+            elapsedNanos: Value(elapsedNanos),
+            fixCount: Value(fixCount),
           ),
         );
   }
@@ -278,6 +325,7 @@ class ActivityRepository {
       startWallMillis: row.startWallMillis,
       distanceM: row.distanceM,
       elapsedNanos: row.elapsedNanos,
+      source: row.source,
       fixCount: row.fixCount,
       rejectedCount: row.rejectedCount,
       mockDetected: row.mockDetected,
@@ -378,6 +426,11 @@ class ActivityRepository {
               : (cp.lastElapsedNanos > r.elapsedNanos
                     ? cp.lastElapsedNanos
                     : r.elapsedNanos),
+          // R125: read verbatim, and note it is NOT part of the ر123 greater-of
+          // pair above. An imported row has no checkpoint at all, so `isOpen`
+          // is false for it and its stored totals — including a 0 elapsed that
+          // means «no clock stated» — are printed as they are.
+          source: r.source,
           isOpen: isOpen,
         ),
       );

@@ -103,8 +103,9 @@ class _NoActivities extends StatelessWidget {
   Sport.run => ('جري', Icons.directions_run),
 };
 
-/// One activity. The icon and the three numbers are all read from the row's own
-/// columns; nothing is recomputed from the wall clock (ر1).
+/// One activity. Every cell is read from the row's own columns; nothing is
+/// recomputed from the wall clock (ر1), and where a column states an ABSENCE
+/// the cell prints a word instead of a number (ر99, R125).
 class _ActivityRow extends StatelessWidget {
   const _ActivityRow({required this.item, required this.sep});
 
@@ -117,6 +118,9 @@ class _ActivityRow extends StatelessWidget {
     final (label, icon) = _sport(Sport.values.byName(item.sport));
     // The same R19 rule the live panel applies: pace is meaningless below 50 m
     // and prints `--:--` rather than a number invented from a short track.
+    // R125 needs no second gate here: an unstated elapsed IS 0 ns, and
+    // `Format.pace` already answers `<= 0` with `--:--` — the test pins that
+    // visible outcome rather than this expression.
     final paceSecPerKm = item.distanceM < 50
         ? null
         : (item.elapsedNanos / 1e9) / (item.distanceM / 1000);
@@ -151,7 +155,16 @@ class _ActivityRow extends StatelessWidget {
             Row(
               children: [
                 _stat('كم', Format.distance(item.distanceM, sep: sep), theme),
-                _stat('الوقت', Format.duration(item.elapsedNanos), theme),
+                // ر99: «00:00» is a duration somebody measured. An imported row
+                // whose file stated no clock stores 0 as an ABSENCE, so the cell
+                // says so in words instead of printing the absence as a number.
+                _stat(
+                  'الوقت',
+                  item.elapsedUnstated
+                      ? 'غير معروف'
+                      : Format.duration(item.elapsedNanos),
+                  theme,
+                ),
                 _stat(
                   'الإيقاع',
                   paceSecPerKm == null
@@ -160,6 +173,13 @@ class _ActivityRow extends StatelessWidget {
                   theme,
                 ),
                 if (item.isOpen) _stat('الحالة', 'قيد التسجيل', theme),
+                // R125: a file from another app is labelled as one, in the same
+                // conditional-cell slot the open row uses. It went there rather
+                // than beside the sport word because the header row measured a
+                // 36 px overflow at the target's 361 dp (measured, not guessed:
+                // the test that runs the imported row is what found it), while
+                // these cells are `Expanded` and share the width.
+                if (item.isImported) _stat('المصدر', 'مستورد', theme),
               ],
             ),
           ],

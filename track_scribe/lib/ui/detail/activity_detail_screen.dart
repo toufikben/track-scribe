@@ -172,6 +172,9 @@ class _DetailBodyState extends ConsumerState<_DetailBody> {
           StatPanel(
             distanceM: s.distanceM,
             elapsedNanos: s.elapsedNanos,
+            // R125: an imported track may state no clock, and then its stored
+            // 0 is an absence — the panel says «غير معروف» instead of «00:00».
+            elapsedUnstated: s.elapsedUnstated,
             sport: Sport.values.byName(s.sport),
             fixCount: s.fixCount,
           ),

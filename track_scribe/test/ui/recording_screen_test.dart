@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/activity_repository.dart';
+import 'package:track_scribe/data/activity_source.dart';
 import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
@@ -42,6 +43,7 @@ ActivitySummary _detailSummary(int id) => ActivitySummary(
   startWallMillis: 1700000000000,
   distanceM: 100,
   elapsedNanos: 60_000_000_000,
+  source: kSourceRecorded,
   fixCount: 2,
   rejectedCount: 0,
   mockDetected: false,

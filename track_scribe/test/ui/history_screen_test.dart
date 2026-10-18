@@ -8,6 +8,8 @@ import 'package:track_scribe/data/activity_repository.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
+import 'package:track_scribe/import/gpx_track.dart';
+import 'package:track_scribe/import/track_importer.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
 import 'package:track_scribe/ui/detail/activity_detail_screen.dart';
@@ -340,6 +342,65 @@ void main() {
     expect(find.text('تفاصيل النشاط'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  // R125 + ر99: an imported file is shown as what it is. Its row carries no
+  // stated clock, so `elapsed_nanos` is the schema default 0 — an ABSENCE — and
+  // the list must print «غير معروف» where a recording would print its own
+  // measured time. Seeded through the real TrackImporter, not a hand-written
+  // row, so the provenance column and the read that consumes it are both in
+  // the path under test.
+  testWidgets(
+    'an imported activity is marked as imported and prints no invented duration',
+    (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 2.75;
+      addTearDown(tester.view.reset);
+
+      const fileStart = 1_700_000_000_000;
+      final imported = await TrackImporter(db, repo).importTrack(
+        ImportedTrack(
+          points: const [
+            ImportedPoint(lat: 36.75, lon: 3.04),
+            ImportedPoint(lat: 36.76, lon: 3.05),
+          ],
+          rawType: 'run',
+          sport: ImportSport.run,
+          startWallMillis: null,
+          rejectedPoints: 0,
+          droppedTimes: 0,
+        ),
+        sport: ImportSport.run,
+        startWallMillis: fileStart,
+      );
+      expect(imported.elapsedKnown, isFalse);
+      final ownId = await seed(
+        startWallMillis: 1_800_000_000_000,
+        distanceM: 6400,
+        elapsedNanos: 2_000_000_000_000,
+      );
+
+      await tester.pumpWidget(app());
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(Key('history-row-${imported.activityId}')), findsOneWidget);
+      expect(find.byKey(Key('history-row-$ownId')), findsOneWidget);
+      expect(find.text('مستورد'), findsOneWidget);
+      expect(find.text('غير معروف'), findsOneWidget);
+      expect(
+        find.text('--:--'),
+        findsOneWidget,
+        reason:
+            "the imported row's pace cell is the only `--:--`: a duration of 0 ns "
+            'divided by its own distance is not a pace (R19 + R125)',
+      );
+      expect(
+        find.text('00:00'),
+        findsNothing,
+        reason: 'the absence of a clock must not read as a zero-length activity',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   // ر117 + ر116: the list's value is released when the screen leaves, so
   // re-entering reads afresh — and the read is the totals SELECT, never a

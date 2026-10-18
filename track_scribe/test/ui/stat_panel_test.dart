@@ -7,9 +7,14 @@ import 'package:track_scribe/theme/theme.dart';
 import 'package:track_scribe/ui/recording/widgets/stat_panel.dart';
 
 class _Harness extends StatelessWidget {
-  const _Harness({required this.distanceM, required this.elapsedNanos});
+  const _Harness({
+    required this.distanceM,
+    required this.elapsedNanos,
+    this.elapsedUnstated = false,
+  });
   final double distanceM;
   final int elapsedNanos;
+  final bool elapsedUnstated;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -22,6 +27,7 @@ class _Harness extends StatelessWidget {
         child: StatPanel(
           distanceM: distanceM,
           elapsedNanos: elapsedNanos,
+          elapsedUnstated: elapsedUnstated,
           sport: Sport.run,
           fixCount: 0,
         ),
@@ -71,4 +77,56 @@ void main() {
       );
     }
   });
+
+  // R125 + ر99: the panel renders a stored ABSENCE as words. Both cases below
+  // carry `elapsedNanos: 0`, and only the flag separates them — which is the
+  // whole point of the pair: the gate must key on provenance, never on the
+  // number, or a recording that measured zero seconds would be relabelled
+  // unknown.
+  testWidgets(
+    'an unstated elapsed prints «غير معروف» and no pace, never 00:00',
+    (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: _Harness(
+            distanceM: 1000,
+            elapsedNanos: 0,
+            elapsedUnstated: true,
+          ),
+        ),
+      );
+      expect(find.text('غير معروف'), findsOneWidget);
+      expect(
+        find.text('00:00'),
+        findsNothing,
+        reason: '0 ns that was never measured is not a zero-length activity',
+      );
+      expect(
+        find.text('--:--'),
+        findsOneWidget,
+        reason: 'a pace divided from an absence of a clock is not a pace',
+      );
+      // The distance WAS computed (the file's own positions), so it keeps
+      // printing as a number.
+      expect(find.text('1,00'), findsNWidgets(2));
+    },
+  );
+
+  testWidgets(
+    'a measured zero elapsed still prints 00:00 — the flag, not the number, '
+    'decides',
+    (tester) async {
+      await tester.pumpWidget(
+        const ProviderScope(
+          child: _Harness(distanceM: 1000, elapsedNanos: 0),
+        ),
+      );
+      expect(find.text('00:00'), findsOneWidget);
+      expect(
+        find.text('غير معروف'),
+        findsNothing,
+        reason: 'a stopwatch that measured zero seconds said so',
+      );
+    },
+  );
 }

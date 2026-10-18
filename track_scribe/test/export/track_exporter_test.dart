@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
+import 'package:track_scribe/data/activity_source.dart';
 import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/export/export_format.dart';
@@ -22,6 +23,7 @@ ActivitySummary _summary({String sport = 'run', required List<StoredPoint> point
       startWallMillis: _startMillis,
       distanceM: 6400,
       elapsedNanos: 2_000_000_000_000,
+      source: kSourceRecorded,
       fixCount: points.length,
       rejectedCount: 0,
       mockDetected: false,

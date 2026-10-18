@@ -161,6 +161,16 @@ class $ActivitiesTable extends Activities
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('recorded'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -176,6 +186,7 @@ class $ActivitiesTable extends Activities
     serverUuid,
     updatedAt,
     isDeleted,
+    source,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -282,6 +293,12 @@ class $ActivitiesTable extends Activities
         isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
       );
     }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    }
     return context;
   }
 
@@ -343,6 +360,10 @@ class $ActivitiesTable extends Activities
         DriftSqlType.bool,
         data['${effectivePrefix}is_deleted'],
       )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
     );
   }
 
@@ -366,6 +387,7 @@ class Activity extends DataClass implements Insertable<Activity> {
   final String? serverUuid;
   final int? updatedAt;
   final bool isDeleted;
+  final String source;
   const Activity({
     required this.id,
     required this.uuid,
@@ -380,6 +402,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     this.serverUuid,
     this.updatedAt,
     required this.isDeleted,
+    required this.source,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -401,6 +424,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       map['updated_at'] = Variable<int>(updatedAt);
     }
     map['is_deleted'] = Variable<bool>(isDeleted);
+    map['source'] = Variable<String>(source);
     return map;
   }
 
@@ -423,6 +447,7 @@ class Activity extends DataClass implements Insertable<Activity> {
           ? const Value.absent()
           : Value(updatedAt),
       isDeleted: Value(isDeleted),
+      source: Value(source),
     );
   }
 
@@ -445,6 +470,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       serverUuid: serializer.fromJson<String?>(json['serverUuid']),
       updatedAt: serializer.fromJson<int?>(json['updatedAt']),
       isDeleted: serializer.fromJson<bool>(json['isDeleted']),
+      source: serializer.fromJson<String>(json['source']),
     );
   }
   @override
@@ -464,6 +490,7 @@ class Activity extends DataClass implements Insertable<Activity> {
       'serverUuid': serializer.toJson<String?>(serverUuid),
       'updatedAt': serializer.toJson<int?>(updatedAt),
       'isDeleted': serializer.toJson<bool>(isDeleted),
+      'source': serializer.toJson<String>(source),
     };
   }
 
@@ -481,6 +508,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     Value<String?> serverUuid = const Value.absent(),
     Value<int?> updatedAt = const Value.absent(),
     bool? isDeleted,
+    String? source,
   }) => Activity(
     id: id ?? this.id,
     uuid: uuid ?? this.uuid,
@@ -495,6 +523,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     serverUuid: serverUuid.present ? serverUuid.value : this.serverUuid,
     updatedAt: updatedAt.present ? updatedAt.value : this.updatedAt,
     isDeleted: isDeleted ?? this.isDeleted,
+    source: source ?? this.source,
   );
   Activity copyWithCompanion(ActivitiesCompanion data) {
     return Activity(
@@ -521,6 +550,7 @@ class Activity extends DataClass implements Insertable<Activity> {
           : this.serverUuid,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
+      source: data.source.present ? data.source.value : this.source,
     );
   }
 
@@ -539,7 +569,8 @@ class Activity extends DataClass implements Insertable<Activity> {
           ..write('mockDetected: $mockDetected, ')
           ..write('serverUuid: $serverUuid, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('isDeleted: $isDeleted')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('source: $source')
           ..write(')'))
         .toString();
   }
@@ -559,6 +590,7 @@ class Activity extends DataClass implements Insertable<Activity> {
     serverUuid,
     updatedAt,
     isDeleted,
+    source,
   );
   @override
   bool operator ==(Object other) =>
@@ -576,7 +608,8 @@ class Activity extends DataClass implements Insertable<Activity> {
           other.mockDetected == this.mockDetected &&
           other.serverUuid == this.serverUuid &&
           other.updatedAt == this.updatedAt &&
-          other.isDeleted == this.isDeleted);
+          other.isDeleted == this.isDeleted &&
+          other.source == this.source);
 }
 
 class ActivitiesCompanion extends UpdateCompanion<Activity> {
@@ -593,6 +626,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
   final Value<String?> serverUuid;
   final Value<int?> updatedAt;
   final Value<bool> isDeleted;
+  final Value<String> source;
   const ActivitiesCompanion({
     this.id = const Value.absent(),
     this.uuid = const Value.absent(),
@@ -607,6 +641,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     this.serverUuid = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.isDeleted = const Value.absent(),
+    this.source = const Value.absent(),
   });
   ActivitiesCompanion.insert({
     this.id = const Value.absent(),
@@ -622,6 +657,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     this.serverUuid = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.isDeleted = const Value.absent(),
+    this.source = const Value.absent(),
   }) : uuid = Value(uuid),
        sport = Value(sport),
        startWallMillis = Value(startWallMillis);
@@ -639,6 +675,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     Expression<String>? serverUuid,
     Expression<int>? updatedAt,
     Expression<bool>? isDeleted,
+    Expression<String>? source,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -654,6 +691,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
       if (serverUuid != null) 'server_uuid': serverUuid,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (isDeleted != null) 'is_deleted': isDeleted,
+      if (source != null) 'source': source,
     });
   }
 
@@ -671,6 +709,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     Value<String?>? serverUuid,
     Value<int?>? updatedAt,
     Value<bool>? isDeleted,
+    Value<String>? source,
   }) {
     return ActivitiesCompanion(
       id: id ?? this.id,
@@ -686,6 +725,7 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
       serverUuid: serverUuid ?? this.serverUuid,
       updatedAt: updatedAt ?? this.updatedAt,
       isDeleted: isDeleted ?? this.isDeleted,
+      source: source ?? this.source,
     );
   }
 
@@ -731,6 +771,9 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
     if (isDeleted.present) {
       map['is_deleted'] = Variable<bool>(isDeleted.value);
     }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
     return map;
   }
 
@@ -749,7 +792,8 @@ class ActivitiesCompanion extends UpdateCompanion<Activity> {
           ..write('mockDetected: $mockDetected, ')
           ..write('serverUuid: $serverUuid, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('isDeleted: $isDeleted')
+          ..write('isDeleted: $isDeleted, ')
+          ..write('source: $source')
           ..write(')'))
         .toString();
   }
@@ -2187,6 +2231,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<String?> serverUuid,
   Value<int?> updatedAt,
   Value<bool> isDeleted,
+  Value<String> source,
 });
 typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<int> id,
@@ -2202,6 +2247,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<String?> serverUuid,
   Value<int?> updatedAt,
   Value<bool> isDeleted,
+  Value<String> source,
 });
 
 final class $$ActivitiesTableReferences
@@ -2298,6 +2344,11 @@ class $$ActivitiesTableFilterComposer
 
   ColumnFilters<bool> get isDeleted => $composableBuilder(
     column: $table.isDeleted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2400,6 +2451,11 @@ class $$ActivitiesTableOrderingComposer
     column: $table.isDeleted,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ActivitiesTableAnnotationComposer
@@ -2459,6 +2515,9 @@ class $$ActivitiesTableAnnotationComposer
 
   GeneratedColumn<bool> get isDeleted =>
       $composableBuilder(column: $table.isDeleted, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
 
   Expression<T> trackPointsRefs<T extends Object>(
     Expression<T> Function($$TrackPointsTableAnnotationComposer a) f,
@@ -2527,6 +2586,7 @@ class $$ActivitiesTableTableManager
                 Value<String?> serverUuid = const Value.absent(),
                 Value<int?> updatedAt = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
+                Value<String> source = const Value.absent(),
               }) => ActivitiesCompanion(
                 id: id,
                 uuid: uuid,
@@ -2541,6 +2601,7 @@ class $$ActivitiesTableTableManager
                 serverUuid: serverUuid,
                 updatedAt: updatedAt,
                 isDeleted: isDeleted,
+                source: source,
               ),
           createCompanionCallback:
               ({
@@ -2557,6 +2618,7 @@ class $$ActivitiesTableTableManager
                 Value<String?> serverUuid = const Value.absent(),
                 Value<int?> updatedAt = const Value.absent(),
                 Value<bool> isDeleted = const Value.absent(),
+                Value<String> source = const Value.absent(),
               }) => ActivitiesCompanion.insert(
                 id: id,
                 uuid: uuid,
@@ -2571,6 +2633,7 @@ class $$ActivitiesTableTableManager
                 serverUuid: serverUuid,
                 updatedAt: updatedAt,
                 isDeleted: isDeleted,
+                source: source,
               ),
           withReferenceMapper: (p0) => p0
               .map(

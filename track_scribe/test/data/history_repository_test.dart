@@ -480,4 +480,79 @@ void main() {
       reason: 'the activity stays recoverable after the failed stop',
     );
   });
+
+  // R125: the list read carries each row's provenance, because the row's
+  // `elapsed_nanos` means two different things depending on it — for a
+  // recording it is measured time, and for a file whose clock did not survive
+  // reading it is the schema default 0, which ر99 forbids printing as «00:00».
+  test(
+    'the list carries provenance, and «elapsed unstated» keys on it — not on '
+    'the number being zero',
+    () async {
+      final recorded = await _seed(
+        repo,
+        uuid: 'uuid-prov-1',
+        startWallMillis: 1_700_000_000_000,
+      );
+      // A recording stopped the instant it started: elapsed 0 IS measured, and
+      // must not be relabelled unknown by a gate that only looks at the number.
+      final zeroRecording = await repo.insertActivity(
+        uuid: 'uuid-prov-2',
+        sport: 'run',
+        startWallMillis: 1_699_999_000_000,
+      );
+      await repo.finishActivity(
+        activityId: zeroRecording,
+        elapsedNanos: 0,
+        distanceM: 0,
+        fixCount: 1,
+        rejectedCount: 0,
+        mockDetected: false,
+      );
+      final unstated = await repo.insertImportedActivity(
+        uuid: 'imp-prov-1',
+        sport: 'bike',
+        startWallMillis: 1_600_000_000_000,
+        distanceM: 12_000,
+        elapsedNanos: 0,
+        fixCount: 3,
+      );
+      final stated = await repo.insertImportedActivity(
+        uuid: 'imp-prov-2',
+        sport: 'run',
+        startWallMillis: 1_500_000_000_000,
+        distanceM: 5_000,
+        elapsedNanos: 1_500_000_000_000,
+        fixCount: 2,
+      );
+
+      final items = await repo.listActivities();
+      final byId = {for (final i in items) i.id: i};
+      expect(byId.keys, containsAll([recorded, zeroRecording, unstated, stated]));
+
+      expect(byId[recorded]!.source, 'recorded');
+      expect(byId[recorded]!.elapsedUnstated, isFalse);
+
+      expect(byId[zeroRecording]!.source, 'recorded');
+      expect(
+        byId[zeroRecording]!.elapsedUnstated,
+        isFalse,
+        reason: 'a recording that measured zero seconds measured zero seconds',
+      );
+
+      expect(byId[unstated]!.source, 'gpx');
+      expect(
+        byId[unstated]!.elapsedUnstated,
+        isTrue,
+        reason: 'the file stated no clock: 0 here is an absence, not a duration',
+      );
+
+      expect(byId[stated]!.source, 'gpx');
+      expect(
+        byId[stated]!.elapsedUnstated,
+        isFalse,
+        reason: 'an import whose file DID state its span keeps a real duration',
+      );
+    },
+  );
 }

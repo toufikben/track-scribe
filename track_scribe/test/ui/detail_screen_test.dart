@@ -7,12 +7,15 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:track_scribe/data/activity_repository.dart';
+import 'package:track_scribe/data/activity_source.dart';
 import 'package:track_scribe/data/activity_summary.dart';
 import 'package:track_scribe/data/app_database_provider.dart';
 import 'package:track_scribe/data/database.dart';
 import 'package:track_scribe/engine/raw_fix.dart';
 import 'package:track_scribe/export/export_format.dart';
 import 'package:track_scribe/export/track_exporter.dart';
+import 'package:track_scribe/import/gpx_track.dart';
+import 'package:track_scribe/import/track_importer.dart';
 import 'package:track_scribe/theme/palette.dart';
 import 'package:track_scribe/ui/basemap/grid_basemap.dart';
 import 'package:track_scribe/ui/basemap/map_style_provider.dart';
@@ -49,6 +52,7 @@ ActivitySummary _synthetic({required List<StoredPoint> points, int id = 7}) =>
       startWallMillis: 1700000000000,
       distanceM: 6400,
       elapsedNanos: 2_000_000_000_000,
+      source: kSourceRecorded,
       fixCount: points.length,
       rejectedCount: 0,
       mockDetected: false,
@@ -168,6 +172,54 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  // R125, and the gap sabotage G2 measured: `StatPanel.elapsedUnstated` is a
+  // plain field, so the panel's own suite cannot prove that the DETAIL screen
+  // forwards the row's verdict — with G2 in place the panel case stayed green
+  // while the history case died. This test is that proof, and it fails on this
+  // screen alone if the forward is replaced by a literal.
+  testWidgets(
+    'an imported activity reads its absent clock in words, never as 00:00',
+    (tester) async {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 2.75;
+      addTearDown(tester.view.reset);
+
+      final imported = await TrackImporter(db, repo).importTrack(
+        ImportedTrack(
+          points: const [
+            ImportedPoint(lat: 36.75, lon: 3.04),
+            ImportedPoint(lat: 36.76, lon: 3.05),
+          ],
+          rawType: 'run',
+          sport: ImportSport.run,
+          startWallMillis: null,
+          rejectedPoints: 0,
+          droppedTimes: 0,
+        ),
+        sport: ImportSport.run,
+        startWallMillis: 1_700_000_000_000,
+      );
+      expect(imported.elapsedKnown, isFalse);
+
+      await tester.pumpWidget(seededApp(activityId: imported.activityId));
+      await tester.pumpAndSettle();
+
+      final panel = tester.widget<StatPanel>(find.byType(StatPanel));
+      expect(
+        panel.elapsedUnstated,
+        isTrue,
+        reason: 'the screen must forward the row verdict, not a constant',
+      );
+      expect(find.text('غير معروف'), findsOneWidget);
+      expect(
+        find.text('00:00'),
+        findsNothing,
+        reason: 'an unmeasured clock must not read as a zero-length activity',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   // ر107 review I-2: the replay map's camera ceiling must be the SAME shared
   // display ceiling the recording band uses. A pack ceiling is a DATA ceiling

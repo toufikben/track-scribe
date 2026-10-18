@@ -89,6 +89,9 @@ class RecordingScreen extends ConsumerWidget {
                       StatPanel(
                         distanceM: s.distanceM,
                         elapsedNanos: s.elapsedNanos,
+                        // R125: the live clock is this session's monotonic
+                        // stopwatch, so its elapsed is always a measured value.
+                        elapsedUnstated: false,
                         sport: s.sport,
                         fixCount: s.fixCount,
                       ),
